@@ -1,3 +1,5 @@
+# This service is used specifically in the interbotix_perception_modules package
+#
 # Save the latest rgb picture with the specified name
 #
 # Request consists of:
