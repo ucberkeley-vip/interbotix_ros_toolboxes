@@ -184,8 +184,6 @@ class InterbotixHexapodXSInterface_JS(object):
         current_COM__m = self.get_COM()
         current_foot_pts__m = self.get_foot_pts()
 
-        # TODO(JS): Double check this logic
-
         # Each leg will need to move by the opposite amount that the COM has to move in the world coordinates
         # That is, moving the COM forward is akin to moving all legs backward
         leg_delta__m = Point(
@@ -226,7 +224,7 @@ class InterbotixHexapodXSInterface_JS(object):
     def _solve_leg_ik(self, leg: Leg, point__cl: Point) -> Tuple[Tuple[float, float, float], bool]:
         p_cf = (point__cl.x, point__cl.y, point__cl.z)
         try:
-            # TODO(JS): Verify that this math all makes sense. Copied directly from interbotix
+            # NOTE(JS): Math copied directly from interbotix
             theta_1 = math.atan2(p_cf[1], p_cf[0])
 
             R_cfcm = np.identity(3)
