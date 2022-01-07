@@ -1,3 +1,5 @@
+# This message is used specifically in the interbotix_rpi_modules package
+#
 # Configure NeoPixel Leds on a Raspberry Pi
 
 string cmd_type       # Either 'pulse', 'blink', 'brightness', or 'color'.
