@@ -47,66 +47,117 @@ class InterbotixHexapodXS(object):
         self.hex = InterbotixHexapodXSInterface(self.dxl, position_p_gain)
         self.pixels = InterbotixRpiPixelInterface(self.dxl.robot_name)
 
+
 ### @brief Definition of the Interbotix Hexapod Module
 ### @param core - reference to the InterbotixRobotXSCore class containing the internal ROS plumbing that drives the Python API
 class InterbotixHexapodXSInterface(object):
     def __init__(self, core, position_p_gain):
-        self.core = core                                                        # Reference to the InterbotixRobotXSCore object
-        self.position_p_gain = position_p_gain                                  # Desired Proportional gain for all servos
-        self.inc_prev = 0                                                       # Latest increment during the gait cycle
-        self.period_cntr = 0                                                    # Used to count a period (self.num_steps/2.0) during the wave or ripple gait cycles
-        self.num_steps = 20.0                                                   # Number of steps in one wave of the first sinusoid cycle
-        self.step_cntr = 1                                                      # Counts the number of steps during a single gait cycle
-        self.gait_types = ["tripod", "ripple", "wave"]                          # Three supported gaits that can be selected
-        self.gait_factors = {"tripod" : 2.0, "ripple" : 3.0, "wave" : 6.0}      # Gait factors that modify the first sinusoid function mentioned above based on the selected gait
-        self.wave_legs = ["right_front", "left_front", "right_middle", "left_middle", "right_back", "left_back"]                                            # Leg 'Queue' when doing the wave gait; after every period, the first element is taken out and appended to the end of the list
-        self.wave_incs = {leg:0 for leg in self.wave_legs}                                                                                                  # Dictionary to keep track of where each leg's foot is during the wave gait
-        self.ripple_legs = {"first" : ["left_middle", "right_front"], "second" : ["left_back", "right_middle"], "third" : ["left_front", "right_back"]}     # Dictionary to keep track of which two legs move together during the ripple gait
-        self.ripple_leg_pairs = ["first", "second", "third"]                                                                                                # Leg pair 'Queue' when doing the ripple gait; after every period, the first element is taken out and appended to the end of the list
-        self.ripple_incs = {pair:0 for pair in self.ripple_leg_pairs}                                                                                       # Dictionary to keep track of where each leg pair's feet are during the ripple gait
-        self.leg_list = ["left_back", "left_middle", "left_front", "right_front", "right_middle", "right_back"]                                             # List of all legs in the hexapod
-        self.leg_time_map = {leg: {"move" : 0, "accel" : 0} for leg in self.leg_list}                                                                       # Keeps track of the moving & accel times for each joint group
-        self.leg_time_map["all"] = {"move" : 0, "accel" : 0}
-        self.leg_mode_on = False                                                # Boolean dictating whether or no 'individual leg control' is on or not
-        self.foot_points = {}                                                   # Dictionary that contains the current feet positions for each leg
-        self.home_foot_points = {}                                              # Dictionary that contains the 'home' feet positions for each leg before starting a gait cycle
-        self.sleep_foot_points = {}                                             # Dictionary that contains the 'sleep' feet positions for each leg
-        self.home_height = 0                                                    # The 'z' component of self.T_fb specifying the height of the 'base_link' frame relative to the 'base_footprint' frame
-        self.sleep_height = 0                                                   # The 'z' component of self.T_fb specifying the height of the 'base_link' frame relative to the 'base_footprint' frame when sleeping
-        self.bottom_height = 0                                                  # Height difference between the 'base_link' frame and the 'base_bottom_link' frame
-        self.T_sf = np.identity(4)                                              # Odometry transform specifying the 'base_footprint' frame relative to the 'odom' frame
-        self.T_fb = np.identity(4)                                              # Body transform specifying the 'base_link' frame relative to the 'base_footprint' frame
-        self.T_bc = {}                                                          # Dictionary containing the static transforms of all six 'coxa_link' frames relative to the 'base_link' frame
-        self.coxa_length = None                                                 # Length [meters] of the coxa_link
-        self.femur_length = None                                                # Length [meters] of the femur_link
-        self.tibia_length = None                                                # Length [meters] of the tibia_link
-        self.femur_offset_angle = None                                          # Offset angle [rad] that makes the tibia_link frame coincident with a line shooting out of the coxa_link frame that's parallel to the ground
-        self.tibia_offset_angle = None                                          # Offset angle [rad] that makes the foot_link frame coincident with a line shooting out of the coxa_link frame that's parallel to the ground
+        self.core = core  # Reference to the InterbotixRobotXSCore object
+        self.position_p_gain = position_p_gain  # Desired Proportional gain for all servos
+        self.inc_prev = 0  # Latest increment during the gait cycle
+        self.period_cntr = 0  # Used to count a period (self.num_steps/2.0) during the wave or ripple gait cycles
+        self.num_steps = 20.0  # Number of steps in one wave of the first sinusoid cycle
+        self.step_cntr = 1  # Counts the number of steps during a single gait cycle
+        self.gait_types = ["tripod", "ripple", "wave"]  # Three supported gaits that can be selected
+        self.gait_factors = {
+            "tripod": 2.0,
+            "ripple": 3.0,
+            "wave": 6.0,
+        }  # Gait factors that modify the first sinusoid function mentioned above based on the selected gait
+        self.wave_legs = [
+            "right_front",
+            "left_front",
+            "right_middle",
+            "left_middle",
+            "right_back",
+            "left_back",
+        ]  # Leg 'Queue' when doing the wave gait; after every period, the first element is taken out and appended to the end of the list
+        self.wave_incs = {
+            leg: 0 for leg in self.wave_legs
+        }  # Dictionary to keep track of where each leg's foot is during the wave gait
+        self.ripple_legs = {
+            "first": ["left_middle", "right_front"],
+            "second": ["left_back", "right_middle"],
+            "third": ["left_front", "right_back"],
+        }  # Dictionary to keep track of which two legs move together during the ripple gait
+        self.ripple_leg_pairs = [
+            "first",
+            "second",
+            "third",
+        ]  # Leg pair 'Queue' when doing the ripple gait; after every period, the first element is taken out and appended to the end of the list
+        self.ripple_incs = {
+            pair: 0 for pair in self.ripple_leg_pairs
+        }  # Dictionary to keep track of where each leg pair's feet are during the ripple gait
+        self.leg_list = [
+            "left_back",
+            "left_middle",
+            "left_front",
+            "right_front",
+            "right_middle",
+            "right_back",
+        ]  # List of all legs in the hexapod
+        self.leg_time_map = {
+            leg: {"move": 0, "accel": 0} for leg in self.leg_list
+        }  # Keeps track of the moving & accel times for each joint group
+        self.leg_time_map["all"] = {"move": 0, "accel": 0}
+        self.leg_mode_on = False  # Boolean dictating whether or no 'individual leg control' is on or not
+        self.foot_points = {}  # Dictionary that contains the current feet positions for each leg
+        self.home_foot_points = (
+            {}
+        )  # Dictionary that contains the 'home' feet positions for each leg before starting a gait cycle
+        self.sleep_foot_points = {}  # Dictionary that contains the 'sleep' feet positions for each leg
+        self.home_height = 0  # The 'z' component of self.T_fb specifying the height of the 'base_link' frame relative to the 'base_footprint' frame
+        self.sleep_height = 0  # The 'z' component of self.T_fb specifying the height of the 'base_link' frame relative to the 'base_footprint' frame when sleeping
+        self.bottom_height = 0  # Height difference between the 'base_link' frame and the 'base_bottom_link' frame
+        self.T_sf = np.identity(
+            4
+        )  # Odometry transform specifying the 'base_footprint' frame relative to the 'odom' frame
+        self.T_fb = np.identity(
+            4
+        )  # Body transform specifying the 'base_link' frame relative to the 'base_footprint' frame
+        self.T_bc = (
+            {}
+        )  # Dictionary containing the static transforms of all six 'coxa_link' frames relative to the 'base_link' frame
+        self.coxa_length = None  # Length [meters] of the coxa_link
+        self.femur_length = None  # Length [meters] of the femur_link
+        self.tibia_length = None  # Length [meters] of the tibia_link
+        self.femur_offset_angle = None  # Offset angle [rad] that makes the tibia_link frame coincident with a line shooting out of the coxa_link frame that's parallel to the ground
+        self.tibia_offset_angle = None  # Offset angle [rad] that makes the foot_link frame coincident with a line shooting out of the coxa_link frame that's parallel to the ground
         self.get_urdf_info()
-        self.pose = PoseStamped()                                               # ROS PoseStamped message to publish self.T_sf to its own topic
-        self.t_sf = TransformStamped()                                          # ROS Transform that holds self.T_sf and is published to the /tf topic
-        self.t_fb = TransformStamped()                                          # ROS Transform that holds self.T_fb and is published to the /tf topic
+        self.pose = PoseStamped()  # ROS PoseStamped message to publish self.T_sf to its own topic
+        self.t_sf = TransformStamped()  # ROS Transform that holds self.T_sf and is published to the /tf topic
+        self.t_fb = TransformStamped()  # ROS Transform that holds self.T_fb and is published to the /tf topic
         self.br = tf2_ros.TransformBroadcaster()
         self.initialize_transforms()
         self.info = self.core.srv_get_info("group", "all")
-        self.info_index_map = dict(zip(self.info.joint_names, range(len(self.info.joint_names))))           # Map joint names to their positions in the upper/lower and sleep position arrays
-        self.hexapod_command = JointGroupCommand(name="all", cmd=[0] * self.info.num_joints)                # ROS Message to command all 18 joints in the hexapod simultaneously
+        self.info_index_map = dict(
+            zip(self.info.joint_names, range(len(self.info.joint_names)))
+        )  # Map joint names to their positions in the upper/lower and sleep position arrays
+        self.hexapod_command = JointGroupCommand(
+            name="all", cmd=[0] * self.info.num_joints
+        )  # ROS Message to command all 18 joints in the hexapod simultaneously
         self.initialize_start_pose()
-        self.pub_pose = rospy.Publisher("/" + self.core.robot_name + "/pose", PoseStamped, queue_size=1)    # ROS Publisher to publish self.T_sf as a PoseStamped message
-        tmr_transforms = rospy.Timer(rospy.Duration(0.04), self.publish_states)                             # ROS Timer to publish transforms to the /tf and /odom topics at a fixed rate
+        self.pub_pose = rospy.Publisher(
+            "/" + self.core.robot_name + "/pose", PoseStamped, queue_size=1
+        )  # ROS Publisher to publish self.T_sf as a PoseStamped message
+        tmr_transforms = rospy.Timer(
+            rospy.Duration(0.04), self.publish_states
+        )  # ROS Timer to publish transforms to the /tf and /odom topics at a fixed rate
+
         print("Initialized InterbotixHexapodXSInterface!\n")
 
     ### @brief Parses the URDF and populates the appropiate variables with link information
     def get_urdf_info(self):
-        full_rd_name = '/' + self.core.robot_name + '/robot_description'
-        while rospy.has_param(full_rd_name) != True: pass
+        full_rd_name = "/" + self.core.robot_name + "/robot_description"
+        while rospy.has_param(full_rd_name) != True:
+            pass
         robot_description = URDF.from_parameter_server(key=full_rd_name)
 
         for leg in self.leg_list:
             joint_object = next((joint for joint in robot_description.joints if joint.name == (leg + "_coxa")), None)
             T_bc = np.identity(4)
-            T_bc[:3,3] = joint_object.origin.xyz
-            T_bc[:3,:3] = ang.eulerAnglesToRotationMatrix(joint_object.origin.rpy)
+            T_bc[:3, 3] = joint_object.origin.xyz
+            T_bc[:3, :3] = ang.eulerAnglesToRotationMatrix(joint_object.origin.rpy)
             self.T_bc[leg] = T_bc
 
         femur_joint = next((joint for joint in robot_description.joints if joint.name == "left_front_femur"))
@@ -116,13 +167,13 @@ class InterbotixHexapodXSInterface(object):
         femur_x = tibia_joint.origin.xyz[0]
         femur_z = tibia_joint.origin.xyz[2]
         self.femur_offset_angle = abs(math.atan2(femur_z, femur_x))
-        self.femur_length = math.sqrt(femur_x**2 + femur_z**2)
+        self.femur_length = math.sqrt(femur_x ** 2 + femur_z ** 2)
 
         foot_joint = next((joint for joint in robot_description.joints if joint.name == "left_front_foot"))
         tibia_x = foot_joint.origin.xyz[0]
         tibia_z = foot_joint.origin.xyz[2]
         self.tibia_offset_angle = abs(math.atan2(tibia_z, tibia_x)) - self.femur_offset_angle
-        self.tibia_length = math.sqrt(tibia_x**2 + tibia_z**2)
+        self.tibia_length = math.sqrt(tibia_x ** 2 + tibia_z ** 2)
 
         bottom_joint = next((joint for joint in robot_description.joints if joint.name == "base_bottom"))
         self.bottom_height = abs(bottom_joint.origin.xyz[2])
@@ -141,7 +192,7 @@ class InterbotixHexapodXSInterface(object):
 
     ### @brief Uses forward-kinematics to find the initial foot position for each leg relative to the 'base_footprint' frame
     def initialize_start_pose(self):
-        self.T_fb[2,3] = self.bottom_height
+        self.T_fb[2, 3] = self.bottom_height
         for leg in self.leg_list:
             theta_1 = self.info.joint_sleep_positions[self.info_index_map[leg + "_coxa"]]
             theta_2 = self.info.joint_sleep_positions[self.info_index_map[leg + "_femur"]]
@@ -160,11 +211,15 @@ class InterbotixHexapodXSInterface(object):
     ### @param leg - name of the leg to perform forward-kinematics on
     ### @return p_f - 3-element list specifying the foot point relative to the 'base_footprint' frame
     def solve_fk(self, theta, leg):
-        x = self.femur_length * math.cos(theta[1] + self.femur_offset_angle) + self.tibia_length * math.cos(theta[1] + self.femur_offset_angle + theta[2] + self.tibia_offset_angle)
-        z = -self.femur_length * math.sin(theta[1] + self.femur_offset_angle) - self.tibia_length * math.sin(theta[1] + self.femur_offset_angle + theta[2] + self.tibia_offset_angle)
+        x = self.femur_length * math.cos(theta[1] + self.femur_offset_angle) + self.tibia_length * math.cos(
+            theta[1] + self.femur_offset_angle + theta[2] + self.tibia_offset_angle
+        )
+        z = -self.femur_length * math.sin(theta[1] + self.femur_offset_angle) - self.tibia_length * math.sin(
+            theta[1] + self.femur_offset_angle + theta[2] + self.tibia_offset_angle
+        )
 
         R_cfcm = np.identity(3)
-        R_cfcm[:2,:2] = ang.yawToRotationMatrix(theta[0])
+        R_cfcm[:2, :2] = ang.yawToRotationMatrix(theta[0])
 
         p_femur = [x, 0, z]
         p_cm = np.add(p_femur, [self.coxa_length, 0, 0])
@@ -185,14 +240,23 @@ class InterbotixHexapodXSInterface(object):
         theta_1 = math.atan2(p_cf[1], p_cf[0])
 
         R_cfcm = np.identity(3)
-        R_cfcm[:2,:2] = ang.yawToRotationMatrix(theta_1)
+        R_cfcm[:2, :2] = ang.yawToRotationMatrix(theta_1)
 
         p_cm = np.dot(R_cfcm.T, p_cf[:3])
         p_cm[0] += mod_value
         p_femur = np.subtract(p_cm, [self.coxa_length, 0, 0])
         try:
-            theta_3 = math.acos((p_femur[0]**2 + p_femur[2]**2 - self.femur_length**2 - self.tibia_length**2) / (2 * self.femur_length * self.tibia_length))
-            theta_2 = -(math.atan2(p_femur[2], p_femur[0]) + math.atan2((self.tibia_length * math.sin(theta_3)) , (self.femur_length + self.tibia_length * math.cos(theta_3))))
+            theta_3 = math.acos(
+                (p_femur[0] ** 2 + p_femur[2] ** 2 - self.femur_length ** 2 - self.tibia_length ** 2)
+                / (2 * self.femur_length * self.tibia_length)
+            )
+            theta_2 = -(
+                math.atan2(p_femur[2], p_femur[0])
+                + math.atan2(
+                    (self.tibia_length * math.sin(theta_3)),
+                    (self.femur_length + self.tibia_length * math.cos(theta_3)),
+                )
+            )
             return [theta_1, theta_2 - self.femur_offset_angle, theta_3 - self.tibia_offset_angle], True
         except ValueError:
             return [0, 0, 0], False
@@ -216,16 +280,16 @@ class InterbotixHexapodXSInterface(object):
     def reset_hexapod(self, pose_type="home"):
         rospy.loginfo("Going to %s pose..." % pose_type)
         self.T_fb = np.identity(4)
-        self.T_fb[2,3] = self.home_height
+        self.T_fb[2, 3] = self.home_height
         self.move_in_place()
-        if (self.foot_points != self.home_foot_points):
+        if self.foot_points != self.home_foot_points:
             self.foot_points = copy.deepcopy(self.home_foot_points)
             self.move_in_world()
         if pose_type == "sleep":
-            if (self.foot_points != self.sleep_foot_points):
+            if self.foot_points != self.sleep_foot_points:
                 self.foot_points = copy.deepcopy(self.sleep_foot_points)
                 self.move_in_world()
-            self.T_fb[2,3] = self.sleep_height
+            self.T_fb[2, 3] = self.sleep_height
             self.move_in_place()
         self.set_trajectory_time("all", 0.150, 0.075)
 
@@ -234,13 +298,13 @@ class InterbotixHexapodXSInterface(object):
     ### @details - Message is future dated by 'moving_time' milliseconds since that's
     ###            the amount of time it takes for the motors to move
     def update_tsf_transform(self, moving_time):
-        self.t_sf.transform.translation.x = self.T_sf[0,3]
-        self.t_sf.transform.translation.y = self.T_sf[1,3]
-        rpy = ang.rotationMatrixToEulerAngles(self.T_sf[:3,:3])
+        self.t_sf.transform.translation.x = self.T_sf[0, 3]
+        self.t_sf.transform.translation.y = self.T_sf[1, 3]
+        rpy = ang.rotationMatrixToEulerAngles(self.T_sf[:3, :3])
         q = quaternion_from_euler(rpy[0], rpy[1], rpy[2])
         self.t_sf.transform.rotation = Quaternion(q[0], q[1], q[2], q[3])
         self.t_sf.header.stamp = rospy.Time.now() + rospy.Duration(moving_time)
-        self.pose.pose.position = Point(self.T_sf[0,3], self.T_sf[1,3], 0)
+        self.pose.pose.position = Point(self.T_sf[0, 3], self.T_sf[1, 3], 0)
         self.pose.pose.orientation = Quaternion(q[0], q[1], q[2], q[3])
         self.pose.header.stamp = rospy.Time.now() + rospy.Duration(moving_time)
 
@@ -248,10 +312,10 @@ class InterbotixHexapodXSInterface(object):
     ### @details - Message is future dated by 'moving_time' since that's the
     ###            amount of time it takes for the motors to move
     def update_tfb_transform(self, moving_time):
-        self.t_fb.transform.translation.x = self.T_fb[0,3]
-        self.t_fb.transform.translation.y = self.T_fb[1,3]
-        self.t_fb.transform.translation.z = self.T_fb[2,3]
-        rpy = ang.rotationMatrixToEulerAngles(self.T_fb[:3,:3])
+        self.t_fb.transform.translation.x = self.T_fb[0, 3]
+        self.t_fb.transform.translation.y = self.T_fb[1, 3]
+        self.t_fb.transform.translation.z = self.T_fb[2, 3]
+        rpy = ang.rotationMatrixToEulerAngles(self.T_fb[:3, :3])
         q = quaternion_from_euler(rpy[0], rpy[1], rpy[2])
         self.t_fb.transform.rotation = Quaternion(q[0], q[1], q[2], q[3])
         self.t_fb.header.stamp = rospy.Time.now() + rospy.Duration(moving_time)
@@ -262,10 +326,15 @@ class InterbotixHexapodXSInterface(object):
     ### @return <bool> - True if function completed successfully; False otherwise
     def update_joint_command(self, point, leg):
         theta, success = self.solve_ik(point, leg)
-        if not success: return False
+        if not success:
+            return False
         theta_names = [leg + "_coxa", leg + "_femur", leg + "_tibia"]
         for x in range(len(theta_names)):
-            if not (self.info.joint_lower_limits[self.info_index_map[theta_names[x]]] <= theta[x] <= self.info.joint_upper_limits[self.info_index_map[theta_names[x]]]):
+            if not (
+                self.info.joint_lower_limits[self.info_index_map[theta_names[x]]]
+                <= theta[x]
+                <= self.info.joint_upper_limits[self.info_index_map[theta_names[x]]]
+            ):
                 return False
         self.hexapod_command.cmd[self.info_index_map[leg + "_coxa"]] = theta[0]
         self.hexapod_command.cmd[self.info_index_map[leg + "_femur"]] = theta[1]
@@ -292,19 +361,19 @@ class InterbotixHexapodXSInterface(object):
     ### @param moving_time - time in seconds that each motor should move
     ### @param accel_time - time in seconds that each motor should accelerate
     def set_trajectory_time(self, group, moving_time=1.0, accel_time=0.3):
-        if (group == "all" and self.leg_mode_on):
+        if group == "all" and self.leg_mode_on:
             self.core.srv_set_reg("group", "all", "Profile_Velocity", int(moving_time * 1000))
             self.core.srv_set_reg("group", "all", "Profile_Acceleration", int(accel_time * 1000))
             for leg in self.leg_list:
-                self.leg_time_map[leg] = {"move" : moving_time, "accel" : accel_time}
-            self.leg_time_map["all"] = {"move" : moving_time, "accel" : accel_time}
+                self.leg_time_map[leg] = {"move": moving_time, "accel": accel_time}
+            self.leg_time_map["all"] = {"move": moving_time, "accel": accel_time}
             self.leg_mode_on = False
         else:
             times = self.leg_time_map[group]
-            if (moving_time != times["move"]):
+            if moving_time != times["move"]:
                 times["move"] = moving_time
                 self.core.srv_set_reg("group", group, "Profile_Velocity", int(moving_time * 1000))
-            if (accel_time != times["accel"]):
+            if accel_time != times["accel"]:
                 times["accel"] = accel_time
                 self.core.srv_set_reg("group", group, "Profile_Acceleration", int(accel_time * 1000))
 
@@ -320,10 +389,15 @@ class InterbotixHexapodXSInterface(object):
         point = list(self.foot_points[leg])
         target_point = np.add(point, p_f_inc)
         theta, success = self.solve_ik(target_point, leg)
-        if not success: return False
+        if not success:
+            return False
         theta_names = [leg + "_coxa", leg + "_femur", leg + "_tibia"]
         for x in range(len(theta_names)):
-            if not (self.info.joint_lower_limits[self.info_index_map[theta_names[x]]] <= theta[x] <= self.info.joint_upper_limits[self.info_index_map[theta_names[x]]]):
+            if not (
+                self.info.joint_lower_limits[self.info_index_map[theta_names[x]]]
+                <= theta[x]
+                <= self.info.joint_upper_limits[self.info_index_map[theta_names[x]]]
+            ):
                 return False
         command = JointGroupCommand(name=leg, cmd=theta)
         self.core.pub_group.publish(command)
@@ -342,17 +416,25 @@ class InterbotixHexapodXSInterface(object):
     ### @param accel_time - time [sec] that each joint should spend accelerating
     ### @param blocking - True if the function should wait 'moving_time' seconds before returning; False otherwise
     ### @return <bool> - True if function completed successfully; False otherwise
-    def move_in_place(self, x=None, y=None, z=None, roll=None, pitch=None, yaw=None, moving_time=1.0, accel_time=0.3, blocking=True):
+    def move_in_place(
+        self, x=None, y=None, z=None, roll=None, pitch=None, yaw=None, moving_time=1.0, accel_time=0.3, blocking=True
+    ):
         self.set_trajectory_time("all", moving_time, accel_time)
         T_fb = np.array(self.T_fb)
-        if x is not None: self.T_fb[0,3] = x
-        if y is not None: self.T_fb[1,3] = y
-        if z is not None: self.T_fb[2,3] = z
-        rpy = ang.rotationMatrixToEulerAngles(self.T_fb[:3,:3])
-        if roll is not None: rpy[0] = roll
-        if pitch is not None: rpy[1] = pitch
-        if yaw is not None: rpy[2] = yaw
-        self.T_fb[:3,:3] = ang.eulerAnglesToRotationMatrix(rpy)
+        if x is not None:
+            self.T_fb[0, 3] = x
+        if y is not None:
+            self.T_fb[1, 3] = y
+        if z is not None:
+            self.T_fb[2, 3] = z
+        rpy = ang.rotationMatrixToEulerAngles(self.T_fb[:3, :3])
+        if roll is not None:
+            rpy[0] = roll
+        if pitch is not None:
+            rpy[1] = pitch
+        if yaw is not None:
+            rpy[2] = yaw
+        self.T_fb[:3, :3] = ang.eulerAnglesToRotationMatrix(rpy)
         for leg, point in self.foot_points.items():
             success = self.update_joint_command(point, leg)
             if not success:
@@ -360,7 +442,8 @@ class InterbotixHexapodXSInterface(object):
                 return False
         self.core.pub_group.publish(self.hexapod_command)
         self.update_tfb_transform(moving_time)
-        if blocking: rospy.sleep(moving_time)
+        if blocking:
+            rospy.sleep(moving_time)
         return True
 
     ### @brief Move the hexapod 'base_footprint' frame relative to the 'odom' frame
@@ -375,18 +458,38 @@ class InterbotixHexapodXSInterface(object):
     ### @param num_cycles - number of gait cycles to complete before exiting
     ### @param cycle_freq - frequency at which the gait cycle should run; defaults to 'num_steps'
     ### @return <bool> - True if function completed successfully; False otherwise
-    def move_in_world(self, x_stride=0, y_stride=0, yaw_stride=0, max_foot_height=0.04, num_steps=20.0, gait_type="tripod", mp=0.150, ap=0.075, num_cycles=1, cycle_freq=None):
+    def move_in_world(
+        self,
+        x_stride=0,
+        y_stride=0,
+        yaw_stride=0,
+        max_foot_height=0.04,
+        num_steps=20.0,
+        gait_type="tripod",
+        mp=0.150,
+        ap=0.075,
+        num_cycles=1,
+        cycle_freq=None,
+    ):
         self.set_trajectory_time("all", mp, ap)
         self.num_steps = num_steps
-        num_steps_in_cycle = self.num_steps * self.gait_factors[gait_type]/2.0
-        if cycle_freq is None: cycle_freq = num_steps
+        num_steps_in_cycle = self.num_steps * self.gait_factors[gait_type] / 2.0
+        if cycle_freq is None:
+            cycle_freq = num_steps
         rate = rospy.Rate(cycle_freq)
         for cycle in range(num_cycles):
             self.step_cntr = 1
             self.inc_prev = 0
-            while (self.step_cntr <= num_steps_in_cycle and not rospy.is_shutdown()):
-                inc = 1/self.gait_factors[gait_type] * 0.5*(1 + math.sin(2*np.pi*(self.step_cntr/self.num_steps) - np.pi/2))
-                foot_height = max_foot_height * 0.5*(1 + math.sin(4*np.pi*(self.step_cntr/self.num_steps) - np.pi/2))
+            while self.step_cntr <= num_steps_in_cycle and not rospy.is_shutdown():
+                inc = (
+                    1
+                    / self.gait_factors[gait_type]
+                    * 0.5
+                    * (1 + math.sin(2 * np.pi * (self.step_cntr / self.num_steps) - np.pi / 2))
+                )
+                foot_height = (
+                    max_foot_height * 0.5 * (1 + math.sin(4 * np.pi * (self.step_cntr / self.num_steps) - np.pi / 2))
+                )
 
                 success = False
                 if gait_type == "tripod":
@@ -401,11 +504,11 @@ class InterbotixHexapodXSInterface(object):
 
                 aug_inc = abs(inc - self.inc_prev)
                 temp_point = [aug_inc * x_stride, aug_inc * y_stride, 0]
-                world_point = np.dot(self.T_sf[:3,:3], temp_point)
-                self.T_sf[:3,3] += world_point
-                rpy = ang.rotationMatrixToEulerAngles(self.T_sf[:3,:3])
+                world_point = np.dot(self.T_sf[:3, :3], temp_point)
+                self.T_sf[:3, 3] += world_point
+                rpy = ang.rotationMatrixToEulerAngles(self.T_sf[:3, :3])
                 rpy[2] += aug_inc * yaw_stride
-                self.T_sf[:3,:3] = ang.eulerAnglesToRotationMatrix(rpy)
+                self.T_sf[:3, :3] = ang.eulerAnglesToRotationMatrix(rpy)
                 self.core.pub_group.publish(self.hexapod_command)
                 self.update_tsf_transform(mp)
 
@@ -429,16 +532,17 @@ class InterbotixHexapodXSInterface(object):
         for leg in self.leg_list:
             new_point = []
             T_osc = np.identity(4)
-            if (leg == "right_front" or leg == "right_back" or leg == "left_middle"):
-                T_osc[:3,:3] = ang.eulerAnglesToRotationMatrix([0, 0, -yaw_inc])
-                p_f = [-x_inc, -y_inc, 0 if self.step_cntr < self.num_steps/2.0 else foot_height]
+            if leg == "right_front" or leg == "right_back" or leg == "left_middle":
+                T_osc[:3, :3] = ang.eulerAnglesToRotationMatrix([0, 0, -yaw_inc])
+                p_f = [-x_inc, -y_inc, 0 if self.step_cntr < self.num_steps / 2.0 else foot_height]
             else:
-                T_osc[:3,:3] = ang.eulerAnglesToRotationMatrix([0, 0, yaw_inc])
-                p_f = [x_inc, y_inc, 0 if self.step_cntr > self.num_steps/2.0 else foot_height]
-            T_osc[:3,3] = p_f
+                T_osc[:3, :3] = ang.eulerAnglesToRotationMatrix([0, 0, yaw_inc])
+                p_f = [x_inc, y_inc, 0 if self.step_cntr > self.num_steps / 2.0 else foot_height]
+            T_osc[:3, 3] = p_f
             new_point = np.dot(T_osc, np.r_[self.foot_points[leg], 1])
             success = self.update_joint_command(new_point[:3], leg)
-            if not success: return False
+            if not success:
+                return False
         return True
 
     ### @brief Makes the hexapod walk using a ripple gait
@@ -462,18 +566,18 @@ class InterbotixHexapodXSInterface(object):
             y_inc = self.ripple_incs[pair] * y_stride
             yaw_inc = self.ripple_incs[pair] * yaw_stride
             p_f = [x_inc, y_inc, z_inc]
-            T_osc[:3,3] = p_f
-            T_osc[:3,:3] = ang.eulerAnglesToRotationMatrix([0, 0, yaw_inc])
+            T_osc[:3, 3] = p_f
+            T_osc[:3, :3] = ang.eulerAnglesToRotationMatrix([0, 0, yaw_inc])
             for leg in self.ripple_legs[pair]:
                 new_point = np.dot(T_osc, np.r_[self.foot_points[leg], 1])
                 success = self.update_joint_command(new_point[:3], leg)
                 if not success:
                     self.ripple_leg_pairs = ["first", "second", "third"]
-                    self.ripple_incs = {p:0 for p in self.ripple_leg_pairs}
+                    self.ripple_incs = {p: 0 for p in self.ripple_leg_pairs}
                     self.period_cntr = 0
                     return False
         self.period_cntr += 1.0
-        if (self.period_cntr == self.num_steps/2.0):
+        if self.period_cntr == self.num_steps / 2.0:
             old_pair = self.ripple_leg_pairs.pop(0)
             self.ripple_leg_pairs.append(old_pair)
             self.period_cntr = 0
@@ -500,17 +604,24 @@ class InterbotixHexapodXSInterface(object):
             y_inc = self.wave_incs[leg] * y_stride
             yaw_inc = self.wave_incs[leg] * yaw_stride
             p_f = [x_inc, y_inc, z_inc]
-            T_osc[:3,3] = p_f
-            T_osc[:3,:3] = ang.eulerAnglesToRotationMatrix([0, 0, yaw_inc])
+            T_osc[:3, 3] = p_f
+            T_osc[:3, :3] = ang.eulerAnglesToRotationMatrix([0, 0, yaw_inc])
             new_point = np.dot(T_osc, np.r_[self.foot_points[leg], 1])
             success = self.update_joint_command(new_point[:3], leg)
             if not success:
-                self.wave_legs = ["right_front", "left_front", "right_middle", "left_middle", "right_back", "left_back"]
-                self.wave_incs = {l:0 for l in self.wave_legs}
+                self.wave_legs = [
+                    "right_front",
+                    "left_front",
+                    "right_middle",
+                    "left_middle",
+                    "right_back",
+                    "left_back",
+                ]
+                self.wave_incs = {l: 0 for l in self.wave_legs}
                 self.period_cntr = 0
                 return False
         self.period_cntr += 1.0
-        if (self.period_cntr == self.num_steps/2.0):
+        if self.period_cntr == self.num_steps / 2.0:
             old_leg = self.wave_legs.pop(0)
             self.wave_legs.append(old_leg)
             self.period_cntr = 0
@@ -532,7 +643,23 @@ class InterbotixHexapodXSInterface(object):
     ### @param num_cycles - number of gait cycles to complete before exiting
     ### @param cycle_freq - frequency at which the gait cycle should run
     ### @return <bool> - True if function completed successfully; False otherwise
-    def move_in_world_rough(self, x_stride=0, y_stride=0, yaw_stride=0, max_foot_height=0.02, leg_up_time=0.5, num_swing_steps=10.0, mp=0.150, ap=0.075, leg_down_inc=0.001, threshold=70, reset_foot_points=False, reset_height=0.12, num_cycles=1, cycle_freq=20.0):
+    def move_in_world_rough(
+        self,
+        x_stride=0,
+        y_stride=0,
+        yaw_stride=0,
+        max_foot_height=0.02,
+        leg_up_time=0.5,
+        num_swing_steps=10.0,
+        mp=0.150,
+        ap=0.075,
+        leg_down_inc=0.001,
+        threshold=70,
+        reset_foot_points=False,
+        reset_height=0.12,
+        num_cycles=1,
+        cycle_freq=20.0,
+    ):
 
         if reset_foot_points:
             self.foot_points = copy.deepcopy(self.home_foot_points)
@@ -549,43 +676,46 @@ class InterbotixHexapodXSInterface(object):
                 for leg in set:
                     new_point = np.r_[self.foot_points[leg][:2], max_foot_height]
                     success = self.update_joint_command(new_point, leg)
-                    if not success: return False
+                    if not success:
+                        return False
                     self.foot_points[leg][2] = max_foot_height
-                self.set_trajectory_time("all", leg_up_time, leg_up_time/2.0)
+                self.set_trajectory_time("all", leg_up_time, leg_up_time / 2.0)
                 self.core.pub_group.publish(self.hexapod_command)
                 time_start = rospy.get_time()
 
                 # Move all legs in the XY plane according to the 'stride' parameters
                 self.set_trajectory_time("all", mp, ap)
                 time_diff = leg_up_time - (rospy.get_time() - time_start)
-                if time_diff > 0: rospy.sleep(time_diff)
+                if time_diff > 0:
+                    rospy.sleep(time_diff)
                 inc_prev = 0
                 for step in range(1, int(num_swing_steps) + 1):
-                    inc = 0.25*(1 + math.sin(np.pi*(step/num_swing_steps) - np.pi/2))
+                    inc = 0.25 * (1 + math.sin(np.pi * (step / num_swing_steps) - np.pi / 2))
                     x_inc = inc * x_stride
                     y_inc = inc * y_stride
                     yaw_inc = inc * yaw_stride
                     for leg, point in self.foot_points.items():
                         T_osc = np.identity(4)
                         if leg not in set:
-                            T_osc[:3,:3] = ang.eulerAnglesToRotationMatrix([0, 0, -yaw_inc])
+                            T_osc[:3, :3] = ang.eulerAnglesToRotationMatrix([0, 0, -yaw_inc])
                             p_f = [-x_inc, -y_inc, 0]
                         else:
-                            T_osc[:3,:3] = ang.eulerAnglesToRotationMatrix([0, 0, yaw_inc])
+                            T_osc[:3, :3] = ang.eulerAnglesToRotationMatrix([0, 0, yaw_inc])
                             p_f = [x_inc, y_inc, 0]
-                        T_osc[:3,3] = p_f
+                        T_osc[:3, 3] = p_f
                         new_point = np.dot(T_osc, np.r_[self.foot_points[leg], 1])
                         success = self.update_joint_command(new_point[:3], leg)
-                        if not success: return False
+                        if not success:
+                            return False
                         if step == num_swing_steps:
                             self.foot_points[leg] = list(new_point[:3])
                     aug_inc = abs(inc - inc_prev)
                     temp_point = [aug_inc * x_stride, aug_inc * y_stride, 0]
-                    world_point = np.dot(self.T_sf[:3,:3], temp_point)
-                    self.T_sf[:3,3] += world_point
-                    rpy = ang.rotationMatrixToEulerAngles(self.T_sf[:3,:3])
+                    world_point = np.dot(self.T_sf[:3, :3], temp_point)
+                    self.T_sf[:3, 3] += world_point
+                    rpy = ang.rotationMatrixToEulerAngles(self.T_sf[:3, :3])
                     rpy[2] += aug_inc * yaw_stride
-                    self.T_sf[:3,:3] = ang.eulerAnglesToRotationMatrix(rpy)
+                    self.T_sf[:3, :3] = ang.eulerAnglesToRotationMatrix(rpy)
                     self.core.pub_group.publish(self.hexapod_command)
                     self.update_tsf_transform(mp)
                     inc_prev = inc
@@ -599,18 +729,20 @@ class InterbotixHexapodXSInterface(object):
                     all_feet_grounded = True
                     current_foot_height -= leg_down_inc
                     for leg in set:
-                        if (rospy.get_time() <= time_start + 0.6):
+                        if rospy.get_time() <= time_start + 0.6:
                             new_point = np.r_[self.foot_points[leg][:2], current_foot_height]
                             success = self.update_joint_command(new_point, leg)
-                            if not success: continue
+                            if not success:
+                                continue
                             self.foot_points[leg][2] = current_foot_height
                             all_feet_grounded = False
-                        elif (rospy.get_time() > time_start + 0.6):
+                        elif rospy.get_time() > time_start + 0.6:
                             joint_effort = self.core.joint_states.effort[self.core.js_index_map[leg + "_femur"]]
-                            if (joint_effort < threshold):
+                            if joint_effort < threshold:
                                 new_point = np.r_[self.foot_points[leg][:2], current_foot_height]
                                 success = self.update_joint_command(new_point, leg)
-                                if not success: continue
+                                if not success:
+                                    continue
                                 self.foot_points[leg][2] = current_foot_height
                                 all_feet_grounded = False
                     self.core.pub_group.publish(self.hexapod_command)
@@ -621,8 +753,8 @@ class InterbotixHexapodXSInterface(object):
     ### @return <list> - 3-element-list containing the 2D pose of the hexapod (as [x, y, theta])
     ### @details - odometry is from <robot_name>/odom to <robot_name>/base_footprint
     def get_odometry(self):
-        rpy = ang.rotationMatrixToEulerAngles(self.T_sf[:3,:3])
-        return [self.T_sf[0,3], self.T_sf[1,3], rpy[2]]
+        rpy = ang.rotationMatrixToEulerAngles(self.T_sf[:3, :3])
+        return [self.T_sf[0, 3], self.T_sf[1, 3], rpy[2]]
 
     ### @brief Get current body bose (i.e. self.T_fb)
     ### @return <4x4 matrix> - copy of self.T_fb
