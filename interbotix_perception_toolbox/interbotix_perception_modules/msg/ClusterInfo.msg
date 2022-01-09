@@ -1,3 +1,5 @@
+# This message is used specifically in the interbotix_perception_modules package
+#
 # Message that holds information about each cluster
 
 string frame_id                     # parent frame of the cluster (usually 'camera_depth_optical_frame' or similar)

@@ -1,3 +1,5 @@
+# This service is used specifically in the interbotix_perception_modules package
+#
 # Parameters used to tune the various PCL Pointcloud filters
 
 float32 x_filter_min            # minimum value [m] along the x axis beyond which all points will be cropped when doing Crop Box Filtering
