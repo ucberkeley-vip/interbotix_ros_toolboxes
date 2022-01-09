@@ -12,6 +12,13 @@ from interbotix_xs_modules.core import InterbotixRobotXSCore
 from interbotix_common_modules import angle_manipulation as ang
 from interbotix_rpi_modules.neopixels import InterbotixRpiPixelInterface
 
+from enum import Enum
+
+
+class LegState(Enum):
+    GROUNDED = 0
+    ELEVATED = 1
+
 
 ### Notes
 
@@ -143,6 +150,8 @@ class InterbotixHexapodXSInterface(object):
         tmr_transforms = rospy.Timer(
             rospy.Duration(0.04), self.publish_states
         )  # ROS Timer to publish transforms to the /tf and /odom topics at a fixed rate
+
+        self.leg_states = {leg: LegState.GROUNDED for leg in self.leg_list}
 
         print("Initialized InterbotixHexapodXSInterface!\n")
 
@@ -517,6 +526,21 @@ class InterbotixHexapodXSInterface(object):
                 rate.sleep()
         return True
 
+    def elevate_legs(self, legs_to_elevate):
+        for leg in self.leg_list:
+            # Check for legs that need to be elevated but are currently on ground
+            if leg in legs_to_elevate and self.leg_states[leg] == LegState.GROUNDED:
+                success = self.move_leg(leg, [0, 0, self.home_height])
+                if not success: return False
+                self.leg_states[leg] = LegState.ELEVATED
+            # Check for legs that need to be grounded but are currently elevated
+            elif leg not in legs_to_elevate and self.leg_states[leg] == LegState.ELEVATED:
+                success = self.move_leg(leg, [0, 0, -self.home_height])
+                if not success: return False
+                self.leg_states[leg] = LegState.GROUNDED
+
+        return True
+
     ### @brief Makes the hexapod walk using a tripod gait
     ### @param x_stride - desired positive/negative distance to cover in a gait cycle relative to the base_footprint's X-axis
     ### @param y_stride - desired positive/negative distance to cover in a gait cycle relative to the base_footprint's Y-axis
@@ -607,7 +631,9 @@ class InterbotixHexapodXSInterface(object):
             T_osc[:3, 3] = p_f
             T_osc[:3, :3] = ang.eulerAnglesToRotationMatrix([0, 0, yaw_inc])
             new_point = np.dot(T_osc, np.r_[self.foot_points[leg], 1])
-            success = self.update_joint_command(new_point[:3], leg)
+            success = (
+                self.update_joint_command(new_point[:3], leg) if self.leg_states[leg] == LegState.GROUNDED else True
+            )
             if not success:
                 self.wave_legs = [
                     "right_front",
