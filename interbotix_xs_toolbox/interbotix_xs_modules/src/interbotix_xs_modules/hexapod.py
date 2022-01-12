@@ -392,10 +392,12 @@ class InterbotixHexapodXSInterface(object):
     ### @param moving_time - time [sec] that each joint should spend moving
     ### @param accel_time - time [sec] that each joint should spend accelerating
     ### @param blocking - True if the function should wait 'moving_time' seconds before returning
-    def move_leg(self, leg, p_f_inc=[0, 0, 0], moving_time=0.15, accel_time=0.075, blocking=True):
+    def move_leg(
+        self, leg, p_f_inc=[0, 0, 0], relative_to_home=False, moving_time=0.15, accel_time=0.075, blocking=True
+    ):
         self.leg_mode_on = True
         self.set_trajectory_time(leg, moving_time, accel_time)
-        point = list(self.foot_points[leg])
+        point = list(self.home_foot_points[leg] if relative_to_home else self.foot_points[leg])
         target_point = np.add(point, p_f_inc)
         theta, success = self.solve_ik(target_point, leg)
         if not success:
@@ -413,6 +415,8 @@ class InterbotixHexapodXSInterface(object):
         self.foot_points[leg] = list(target_point)
         if blocking:
             rospy.sleep(moving_time)
+
+        return True
 
     ### @brief Move the hexapod 'base_link' frame in place
     ### @param x - desired 'x' component of self.T_fb
@@ -530,13 +534,15 @@ class InterbotixHexapodXSInterface(object):
         for leg in self.leg_list:
             # Check for legs that need to be elevated but are currently on ground
             if leg in legs_to_elevate and self.leg_states[leg] == LegState.GROUNDED:
-                success = self.move_leg(leg, [0, 0, self.home_height])
-                if not success: return False
+                success = self.move_leg(leg, [0, 0, 0.05])
+                if not success:
+                    return False
                 self.leg_states[leg] = LegState.ELEVATED
             # Check for legs that need to be grounded but are currently elevated
             elif leg not in legs_to_elevate and self.leg_states[leg] == LegState.ELEVATED:
-                success = self.move_leg(leg, [0, 0, -self.home_height])
-                if not success: return False
+                success = self.move_leg(leg, [0, 0, -0.05])
+                if not success:
+                    return False
                 self.leg_states[leg] = LegState.GROUNDED
 
         return True
