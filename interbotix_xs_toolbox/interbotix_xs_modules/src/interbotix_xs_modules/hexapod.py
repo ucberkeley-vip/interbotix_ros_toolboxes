@@ -156,12 +156,8 @@ class InterbotixHexapodXSInterface(object):
         theta_0 = self.info.joint_sleep_positions[self.info_index_map["turret_rot"]]
         theta_1 = self.info.joint_sleep_positions[self.info_index_map["turret_ext"]]
         theta_2 = self.info.joint_sleep_positions[self.info_index_map["turret_tilt"]]
-        # theta_3 = self.info.joint_sleep_positions[self.info_index_map["turret_pinch"]]
+        theta_3 = self.info.joint_sleep_positions[self.info_index_map["turret_pinch"]]
         self.turret_points = self.solve_turret_fk([theta_0, theta_1, theta_2, theta_3])
-        self.hexapod_command.cmd[self.info_index_map["turret_rot"]] = theta_0
-        self.hexapod_command.cmd[self.info_index_map["turret_ext"]] = theta_1
-        self.hexapod_command.cmd[self.info_index_map["turret_tilt"]] = theta_2
-        # self.hexapod_command.cmd[self.info_index_map["turret_pinch"]] = theta_3
         self.core.srv_set_reg("group", "all", "Position_P_Gain", self.position_p_gain)
         self.reset_hexapod("home")
         self.move_in_world()
