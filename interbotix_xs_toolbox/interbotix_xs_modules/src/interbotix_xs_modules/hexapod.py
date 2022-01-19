@@ -68,6 +68,7 @@ class InterbotixHexapodXSInterface(object):
         self.leg_time_map = {leg: {"move" : 0, "accel" : 0} for leg in self.leg_list}                                                                       # Keeps track of the moving & accel times for each joint group
         self.leg_time_map["all"] = {"move" : 0, "accel" : 0}
         self.leg_mode_on = False                                                # Boolean dictating whether or no 'individual leg control' is on or not
+        self.turret_points = {}                                                 # Contains current turret motor positions (rot, ext, tilt, pinch)
         self.foot_points = {}                                                   # Dictionary that contains the current feet positions for each leg
         self.home_foot_points = {}                                              # Dictionary that contains the 'home' feet positions for each leg before starting a gait cycle
         self.sleep_foot_points = {}                                             # Dictionary that contains the 'sleep' feet positions for each leg
@@ -151,9 +152,25 @@ class InterbotixHexapodXSInterface(object):
             self.sleep_foot_points[leg][2] = 0
         self.home_foot_points = copy.deepcopy(self.sleep_foot_points)
         self.foot_points = copy.deepcopy(self.home_foot_points)
+        # initialize turret position var to current position (in theta space, next add ik+pinch_flag to put it into world space)
+        theta_0 = self.info.joint_sleep_positions[self.info_index_map["turret_rot"]]
+        theta_1 = self.info.joint_sleep_positions[self.info_index_map["turret_ext"]]
+        theta_2 = self.info.joint_sleep_positions[self.info_index_map["turret_tilt"]]
+        theta_3 = self.info.joint_sleep_positions[self.info_index_map["turret_pinch"]]
+        self.turret_points = self.solve_turret_fk([theta_0, theta_1, theta_2, theta_3])
         self.core.srv_set_reg("group", "all", "Position_P_Gain", self.position_p_gain)
         self.reset_hexapod("home")
         self.move_in_world()
+
+    ### Performs forward kinematics for turret position
+    ### Next add ik+pinch_flag to put it into world space
+    def solve_turret_fk(self, theta):
+        return theta
+
+    ### Performs inverse kinematics for turret position
+    ### Next add ik+pinch_flag to put it into world space
+    def solve_turret_ik(self, theta):
+        return theta
 
     ### @brief Performs forward-kinematics to get the specified leg's foot position relative to the 'base_footprint' frame
     ### @param theta - list specifying the desired coxa, femur, and tibia joint values
@@ -307,6 +324,25 @@ class InterbotixHexapodXSInterface(object):
             if (accel_time != times["accel"]):
                 times["accel"] = accel_time
                 self.core.srv_set_reg("group", group, "Profile_Acceleration", int(accel_time * 1000))
+
+    ### @brief Moves turret position relative to current turret position
+    def move_turret(self, p_f_inc=[0,0,0], moving_time=0.15, accel_time=0.075, blocking=True):
+        self.core.srv_set_reg("group", turret_group, "Profile_Velocity", int(moving_time * 1000))
+        self.core.srv_set_reg("group", turret_group, "Profile_Acceleration", int(accel_time * 1000))
+        point = self.turret_points # currently motor angles
+        target_point = np.add(point, p_f_inc) #currently moving motors a bit each time: later change to moving pos a bit with ik
+        theta, success = self.solve_turret_ik(target_point) # currently just returns motor angles back to you
+        if not success: return False
+        theta_names = ["turret_rot", "turret_ext", "turret_tilt", "turret_pinch"]
+        for x in range(len(theta_names)):
+            if not (self.info.joint_lower_limits[self.info_index_map[theta_names[x]]] <= theta[x] <= self.info.joint_upper_limits[self.info_index_map[theta_names[x]]]):
+                return False
+        command = JointGroupCommand(name=turret_group, cmd=theta)
+        self.core.pub_group.publish(command)
+        self.turret_points = list(target_point)
+
+        if blocking:
+            rospy.sleep(moving_time)
 
     ### @brief Moves the selected leg's foot position relative to its current foot position
     ### @param leg - name of the leg to move
