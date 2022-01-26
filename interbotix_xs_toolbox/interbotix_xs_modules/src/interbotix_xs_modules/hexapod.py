@@ -157,13 +157,17 @@ class InterbotixHexapodXSInterface(object):
         theta_1 = self.info.joint_sleep_positions[self.info_index_map["turret_ext"]]
         theta_2 = self.info.joint_sleep_positions[self.info_index_map["turret_tilt"]]
         # theta_3 = self.info.joint_sleep_positions[self.info_index_map["turret_pinch"]]
-        self.turret_points = self.solve_turret_fk([theta_0, theta_1, theta_2, theta_3])
+        self.turret_points = self.solve_turret_fk([theta_0, theta_1, theta_2])
         self.hexapod_command.cmd[self.info_index_map["turret_rot"]] = theta_0
         self.hexapod_command.cmd[self.info_index_map["turret_ext"]] = theta_1
         self.hexapod_command.cmd[self.info_index_map["turret_tilt"]] = theta_2
-        # self.hexapod_command.cmd[self.info_index_map["turret_pinch"]] = theta_3
+        #self.hexapod_command.cmd[self.info_index_map["turret_pinch"]] = theta_3
         self.core.srv_set_reg("group", "all", "Position_P_Gain", self.position_p_gain)
+        #print(self.hexapod_command)
+        #print(self.core.joint_states.position)
         self.reset_hexapod("home")
+        #print(self.hexapod_command)
+        #print(self.core.joint_states.position)
         self.move_in_world()
 
     ### Performs forward kinematics for turret position
@@ -331,17 +335,19 @@ class InterbotixHexapodXSInterface(object):
 
     ### @brief Moves turret position relative to current turret position
     def move_turret(self, p_f_inc=[0,0,0], moving_time=0.15, accel_time=0.075, blocking=True):
-        self.core.srv_set_reg("group", turret_group, "Profile_Velocity", int(moving_time * 1000))
-        self.core.srv_set_reg("group", turret_group, "Profile_Acceleration", int(accel_time * 1000))
+        print("move turret")
+        self.core.srv_set_reg("group", "turret_group", "Profile_Velocity", int(moving_time * 1000))
+        self.core.srv_set_reg("group", "turret_group", "Profile_Acceleration", int(accel_time * 1000))
         point = self.turret_points # currently motor angles
         target_point = np.add(point, p_f_inc) #currently moving motors a bit each time: later change to moving pos a bit with ik
-        theta, success = self.solve_turret_ik(target_point) # currently just returns motor angles back to you
-        if not success: return False
-        theta_names = ["turret_rot", "turret_ext", "turret_tilt", "turret_pinch"]
-        for x in range(len(theta_names)):
-            if not (self.info.joint_lower_limits[self.info_index_map[theta_names[x]]] <= theta[x] <= self.info.joint_upper_limits[self.info_index_map[theta_names[x]]]):
-                return False
-        command = JointGroupCommand(name=turret_group, cmd=theta)
+        theta = self.solve_turret_ik(target_point) # currently just returns motor angles back to you
+        theta_names = ["turret_rot", "turret_ext", "turret_tilt"] # add turret_pinch next
+        print(theta)
+        #for x in range(len(theta_names)):
+        #    if not (self.info.joint_lower_limits[self.info_index_map[theta_names[x]]] <= theta[x] <= self.info.joint_upper_limits[self.info_index_map[theta_names[x]]]):
+        #        return False
+        command = JointGroupCommand(name="turret_group", cmd=theta)
+        #print(command)
         self.core.pub_group.publish(command)
         self.turret_points = list(target_point)
 
