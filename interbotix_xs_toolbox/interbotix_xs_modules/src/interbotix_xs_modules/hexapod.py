@@ -336,8 +336,6 @@ class InterbotixHexapodXSInterface(object):
     ### @brief Moves turret position relative to current turret position
     def move_turret(self, p_f_inc=[0,0,0], moving_time=0.15, accel_time=0.075, blocking=True):
         print("move turret")
-        self.core.srv_set_reg("group", "turret_group", "Profile_Velocity", int(moving_time * 1000))
-        self.core.srv_set_reg("group", "turret_group", "Profile_Acceleration", int(accel_time * 1000))
         point = self.turret_points # currently motor angles
         target_point = np.add(point, p_f_inc) #currently moving motors a bit each time: later change to moving pos a bit with ik
         theta = self.solve_turret_ik(target_point) # currently just returns motor angles back to you
