@@ -68,7 +68,8 @@ class InterbotixHexapodXSInterface(object):
         self.leg_time_map = {leg: {"move" : 0, "accel" : 0} for leg in self.leg_list}                                                                       # Keeps track of the moving & accel times for each joint group
         self.leg_time_map["all"] = {"move" : 0, "accel" : 0}
         self.leg_mode_on = False                                                # Boolean dictating whether or no 'individual leg control' is on or not
-        self.turret_points = {}                                                 # Contains current turret motor positions (rot, ext, tilt, pinch)
+        self.turret_points = {}                                                 # Contains current turret motor positions (rot, ext, tilt)
+        self.pinch_closed = True                                                # True means valve is closed, false means open 
         self.foot_points = {}                                                   # Dictionary that contains the current feet positions for each leg
         self.home_foot_points = {}                                              # Dictionary that contains the 'home' feet positions for each leg before starting a gait cycle
         self.sleep_foot_points = {}                                             # Dictionary that contains the 'sleep' feet positions for each leg
@@ -156,18 +157,20 @@ class InterbotixHexapodXSInterface(object):
         theta_0 = self.info.joint_sleep_positions[self.info_index_map["turret_rot"]]
         theta_1 = self.info.joint_sleep_positions[self.info_index_map["turret_ext"]]
         theta_2 = self.info.joint_sleep_positions[self.info_index_map["turret_tilt"]]
-        # theta_3 = self.info.joint_sleep_positions[self.info_index_map["turret_pinch"]]
+        theta_3 = self.info.joint_sleep_positions[self.info_index_map["turret_pinch"]]
         self.turret_points = self.solve_turret_fk([theta_0, theta_1, theta_2])
+        self.pinch_closed = True
         self.hexapod_command.cmd[self.info_index_map["turret_rot"]] = theta_0
         self.hexapod_command.cmd[self.info_index_map["turret_ext"]] = theta_1
         self.hexapod_command.cmd[self.info_index_map["turret_tilt"]] = theta_2
-        #self.hexapod_command.cmd[self.info_index_map["turret_pinch"]] = theta_3
+        self.hexapod_command.cmd[self.info_index_map["turret_pinch"]] = theta_3
         self.core.srv_set_reg("group", "all", "Position_P_Gain", self.position_p_gain)
         #print(self.hexapod_command)
         #print(self.core.joint_states.position)
         self.reset_hexapod("home")
         #print(self.hexapod_command)
         #print(self.core.joint_states.position)
+        self.move_in_place(z=.12) #raise starting height
         self.move_in_world()
 
     ### Performs forward kinematics for turret position
@@ -334,6 +337,20 @@ class InterbotixHexapodXSInterface(object):
                 times["accel"] = accel_time
                 self.core.srv_set_reg("group", group, "Profile_Acceleration", int(accel_time * 1000))
 
+    def change_pinch_state(self, moving_time=0.15, accel_time=.075, blocking=True):
+        print("pinch motor actuate")
+        if (self.pinch_closed = True):
+            self.pinch_closed = False
+            command = JointSingleCommand(name="turret_pinch", cmd=3)
+        if (self.pinch_closed = False):
+            self.pinch_close = True
+            command = JointSingleCommand(name="turret_pinch", cmd=0)
+        print(command)
+        self.core.pub_group.publish(command)
+
+        if blocking:
+            rospy.sleep(moving_time)
+
     ### @brief Moves turret position relative to current turret position
     def move_turret(self, p_f_inc=[0,0,0], moving_time=0.15, accel_time=0.075, blocking=True):
         print("move turret")
@@ -422,7 +439,8 @@ class InterbotixHexapodXSInterface(object):
     ### @param num_cycles - number of gait cycles to complete before exiting
     ### @param cycle_freq - frequency at which the gait cycle should run; defaults to 'num_steps'
     ### @return <bool> - True if function completed successfully; False otherwise
-    def move_in_world(self, x_stride=0, y_stride=0, yaw_stride=0, max_foot_height=0.04, num_steps=20.0, gait_type="tripod", mp=0.150, ap=0.075, num_cycles=1, cycle_freq=None):
+    ### changed max_foot_height from .04 to .08
+    def move_in_world(self, x_stride=0, y_stride=0, yaw_stride=0, max_foot_height=0.08, num_steps=20.0, gait_type="tripod", mp=0.150, ap=0.075, num_cycles=1, cycle_freq=None):
         self.set_trajectory_time("all", mp, ap)
         self.num_steps = num_steps
         num_steps_in_cycle = self.num_steps * self.gait_factors[gait_type]/2.0
