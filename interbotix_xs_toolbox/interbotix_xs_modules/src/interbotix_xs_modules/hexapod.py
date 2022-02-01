@@ -69,7 +69,7 @@ class InterbotixHexapodXSInterface(object):
         self.leg_time_map["all"] = {"move" : 0, "accel" : 0}
         self.leg_mode_on = False                                                # Boolean dictating whether or no 'individual leg control' is on or not
         self.turret_points = {}                                                 # Contains current turret motor positions (rot, ext, tilt)
-        self.pinch_closed = True                                                # True means valve is closed, false means open 
+        self.pinch_closed = True                                                # True means valve is closed, false means open
         self.foot_points = {}                                                   # Dictionary that contains the current feet positions for each leg
         self.home_foot_points = {}                                              # Dictionary that contains the 'home' feet positions for each leg before starting a gait cycle
         self.sleep_foot_points = {}                                             # Dictionary that contains the 'sleep' feet positions for each leg
@@ -174,10 +174,15 @@ class InterbotixHexapodXSInterface(object):
         self.move_in_world()
 
     ### Performs forward kinematics for turret position
+    ### thetas are positions of rotation, extension, tilt motors respectively
     ### Next add ik+pinch_flag to put it into world space
     def solve_turret_fk(self, theta):
+        theta[2] = theta[2] + math.pi # tilt motor offset to make starting position zero
+        x = (23*math.cos(theta[2]))/100 + (23*math.sin(theta[2]))/100 + (3*math.cos(theta[0])*math.cos(theta[2]))/20 + math.cos(theta[2])*((607*theta[1])/100000 + 3/20)
+        y = (3*math.sin(theta[0]))/20
+        z = (23*math.cos(theta[2]))/100 + (23*math.sin(theta[2]))/100 - (3*math.cos(theta[0])*math.sin(theta[2]))/20 - math.sin(theta[2])*((607*theta[1])/100000 + 3/20)
+        print([x, y, z])
         return theta
-
     ### Performs inverse kinematics for turret position
     ### Next add ik+pinch_flag to put it into world space
     def solve_turret_ik(self, theta):
