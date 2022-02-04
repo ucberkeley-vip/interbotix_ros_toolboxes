@@ -189,7 +189,7 @@ class InterbotixHexapodXSInterface(object):
         #print("turret fk")
         #theta[1] = theta[1] - 1.4 # extension motor offset angle
         #theta[2] = theta[2] + math.pi # tilt motor offset to make starting position zero
-        t1 = theta[0]
+        t1 = theta[0]/3.5 # gear ratio for reducing gear 
         d2 = theta[1]*.006007 # radians to linear meters
         t3 = theta[2]
         x = math.cos(t1)*(d2 + .23*math.cos(t3) + .15)
@@ -207,6 +207,7 @@ class InterbotixHexapodXSInterface(object):
         z = point_space[2]
         t3 = np.arcsin((.23-z)/.23)
         t1 = np.arctan(y/x)
+        t1 = t1 * 3.5 # gear ratio for reducing gear 
         if (t1 != 0): 
             d2 = y/math.sin(t1) -.23*math.cos(t3) -.15
             d2 = d2/.006007
@@ -405,8 +406,9 @@ class InterbotixHexapodXSInterface(object):
         #for x in range(len(theta_names)):
         #    if not (self.info.joint_lower_limits[self.info_index_map[theta_names[x]]] <= theta[x] <= self.info.joint_upper_limits[self.info_index_map[theta_names[x]]]):
         #        return False
-        command = JointGroupCommand(name="turret_group", cmd=new_theta)
-        self.core.pub_group.publish(command)
+        if (new_theta[0] > -math.pi/2 and new_theta[0] < math.pi/2 and new_theta[1] > 0 and new_theta[2] > -1 and new_theta[2] < 1):
+            command = JointGroupCommand(name="turret_group", cmd=new_theta)
+            self.core.pub_group.publish(command)
         #self.turret_points = list(target_point)
 
         if blocking:
