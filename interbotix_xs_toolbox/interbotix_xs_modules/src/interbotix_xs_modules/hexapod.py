@@ -1,5 +1,6 @@
 import copy
 import math
+from enum import Enum
 import rospy
 import tf2_ros
 import numpy as np
@@ -14,6 +15,9 @@ from interbotix_xs_modules.core import InterbotixRobotXSCore
 from interbotix_common_modules import angle_manipulation as ang
 from interbotix_rpi_modules.neopixels import InterbotixRpiPixelInterface
 
+class LegState(Enum):
+    GROUNDED = 0
+    ELEVATED = 1
 
 ### Notes
 
@@ -102,6 +106,7 @@ class InterbotixHexapodXSInterface(object):
         self.initialize_start_pose()
         self.pub_pose = rospy.Publisher("/" + self.core.robot_name + "/pose", PoseStamped, queue_size=1)    # ROS Publisher to publish self.T_sf as a PoseStamped message
         tmr_transforms = rospy.Timer(rospy.Duration(0.04), self.publish_states)                             # ROS Timer to publish transforms to the /tf and /odom topics at a fixed rate
+        self.leg_states = {leg: LegState.GROUNDED for leg in self.leg_list}
         print("Initialized InterbotixHexapodXSInterface!\n")
 
     ### @brief Parses the URDF and populates the appropiate variables with link information
@@ -420,10 +425,10 @@ class InterbotixHexapodXSInterface(object):
     ### @param accel_time - time [sec] that each joint should spend accelerating
     ### @param blocking - True if the function should wait 'moving_time' seconds before returning
     ### @return <bool> - True if function completed successfully; False otherwise
-    def move_leg(self, leg, p_f_inc=[0, 0, 0], moving_time=0.15, accel_time=0.075, blocking=True):
+    def move_leg(self, leg, p_f_inc=[0, 0, 0], relative_to_home=False, moving_time=0.15, accel_time=0.075, blocking=True):
         self.leg_mode_on = True
         self.set_trajectory_time(leg, moving_time, accel_time)
-        point = list(self.foot_points[leg])
+        point = list(self.home_foot_points[leg] if relative_to_home else self.foot_points[leg])
         target_point = np.add(point, p_f_inc)
         theta, success = self.solve_ik(target_point, leg)
         if not success: return False
@@ -436,6 +441,22 @@ class InterbotixHexapodXSInterface(object):
         self.foot_points[leg] = list(target_point)
         if blocking:
             rospy.sleep(moving_time)
+        return True
+
+    def elevate_legs(self, legs_to_elevate):
+        for leg in self.leg_list:
+            # Check for legs that need to be elevated but are currently on ground
+            if leg in legs_to_elevate and self.leg_states[leg] == LegState.GROUNDED:
+                success = self.move_leg(leg, [0, 0, 0.05])
+                if not success:
+                    return False
+                self.leg_states[leg] = LegState.ELEVATED
+            # Check for legs that need to be grounded but are currently elevated
+            elif leg not in legs_to_elevate and self.leg_states[leg] == LegState.ELEVATED:
+                success = self.move_leg(leg, [0, 0, -0.05])
+                if not success:
+                    return False
+                self.leg_states[leg] = LegState.GROUNDED
         return True
 
     ### @brief Move the hexapod 'base_link' frame in place
