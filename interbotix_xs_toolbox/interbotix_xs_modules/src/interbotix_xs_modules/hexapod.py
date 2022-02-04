@@ -3,6 +3,8 @@ import math
 import rospy
 import tf2_ros
 import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 from urdf_parser_py.urdf import URDF
 from interbotix_xs_msgs.msg import *
 from geometry_msgs.msg import PoseStamped, Point
@@ -69,6 +71,10 @@ class InterbotixHexapodXSInterface(object):
         self.leg_time_map["all"] = {"move" : 0, "accel" : 0}
         self.leg_mode_on = False                                                # Boolean dictating whether or no 'individual leg control' is on or not
         self.turret_points = {}                                                 # Contains current turret motor positions (rot, ext, tilt)
+        self.turret_pos_points = {}                                             # contains end effector location in space 
+        self.turret_plot_x = []
+        self.turret_plot_y = []
+        self.turret_plot_z = []
         self.pinch_closed = True                                                # True means valve is closed, false means open
         self.foot_points = {}                                                   # Dictionary that contains the current feet positions for each leg
         self.home_foot_points = {}                                              # Dictionary that contains the 'home' feet positions for each leg before starting a gait cycle
@@ -158,7 +164,10 @@ class InterbotixHexapodXSInterface(object):
         theta_1 = self.info.joint_sleep_positions[self.info_index_map["turret_ext"]]
         theta_2 = self.info.joint_sleep_positions[self.info_index_map["turret_tilt"]]
         theta_3 = self.info.joint_sleep_positions[self.info_index_map["turret_pinch"]]
-        self.turret_points = self.solve_turret_fk([theta_0, theta_1, theta_2])
+        print("turret sleep pos", theta_0, theta_1, theta_2, theta_3)
+        print("current tilt pos", self.core.srv_get_reg('single','turret_tilt','Present_Position',0))
+        self.turret_points = [theta_0, theta_1, theta_2]
+        self.turret_pos_points = self.solve_turret_fk(self.turret_points)
         self.pinch_closed = True
         self.hexapod_command.cmd[self.info_index_map["turret_rot"]] = theta_0
         self.hexapod_command.cmd[self.info_index_map["turret_ext"]] = theta_1
@@ -170,23 +179,44 @@ class InterbotixHexapodXSInterface(object):
         self.reset_hexapod("home")
         #print(self.hexapod_command)
         #print(self.core.joint_states.position)
-        self.move_in_place(z=.12) #raise starting height
+        #self.move_in_place(z=.12) #raise starting height
         self.move_in_world()
 
     ### Performs forward kinematics for turret position
     ### thetas are positions of rotation, extension, tilt motors respectively
     ### Next add ik+pinch_flag to put it into world space
     def solve_turret_fk(self, theta):
-        theta[2] = theta[2] + math.pi # tilt motor offset to make starting position zero
-        x = (23*math.cos(theta[2]))/100 + (23*math.sin(theta[2]))/100 + (3*math.cos(theta[0])*math.cos(theta[2]))/20 + math.cos(theta[2])*((607*theta[1])/100000 + 3/20)
-        y = (3*math.sin(theta[0]))/20
-        z = (23*math.cos(theta[2]))/100 + (23*math.sin(theta[2]))/100 - (3*math.cos(theta[0])*math.sin(theta[2]))/20 - math.sin(theta[2])*((607*theta[1])/100000 + 3/20)
-        print([x, y, z])
+        #print("turret fk")
+        #theta[1] = theta[1] - 1.4 # extension motor offset angle
+        #theta[2] = theta[2] + math.pi # tilt motor offset to make starting position zero
+        t1 = theta[0]
+        d2 = theta[1]*.006007 # radians to linear meters
+        t3 = theta[2]
+        x = math.cos(t1)*(d2 + .23*math.cos(t3) + .15)
+        y = math.sin(t1)*(d2 + .23*math.cos(t3) + .15)
+        z = .23 - .23*math.sin(t3)
+        print("points in space from fk", [x, y, z])
+        self.turret_position_points = [x,y,z]
         return theta
+
     ### Performs inverse kinematics for turret position
     ### Next add ik+pinch_flag to put it into world space
-    def solve_turret_ik(self, theta):
-        return theta
+    def solve_turret_ik(self, point_space):
+        x = point_space[0]
+        y = point_space[1]
+        z = point_space[2]
+        t3 = np.arcsin((.23-z)/.23)
+        t1 = np.arctan(y/x)
+        if (t1 != 0): 
+            d2 = y/math.sin(t1) -.23*math.cos(t3) -.15
+            d2 = d2/.006007
+            print("turret angles from ik not singular", [t1,d2,t3])
+        else:
+            d2 = x -.23*math.cos(t3) - .15
+            d2 = d2/.006007
+            print("turret angles from ik singular", [t1,d2,t3])
+            
+        return [t1, d2, t3]
 
     ### @brief Performs forward-kinematics to get the specified leg's foot position relative to the 'base_footprint' frame
     ### @param theta - list specifying the desired coxa, femur, and tibia joint values
@@ -358,18 +388,26 @@ class InterbotixHexapodXSInterface(object):
     ### @brief Moves turret position relative to current turret position
     def move_turret(self, p_f_inc=[0,0,0], moving_time=0.15, accel_time=0.075, blocking=True):
         print("move turret")
-        point = self.turret_points # currently motor angles
-        target_point = np.add(point, p_f_inc) #currently moving motors a bit each time: later change to moving pos a bit with ik
-        theta = self.solve_turret_ik(target_point) # currently just returns motor angles back to you
-        theta_names = ["turret_rot", "turret_ext", "turret_tilt"] # add turret_pinch next
-        print(theta)
+        point_space = self.turret_position_points
+        target_point_space = np.add(point_space, p_f_inc)
+        new_theta = self.solve_turret_ik(target_point_space) # returns angles
+        self.turret_points = self.solve_turret_fk(new_theta)
+        
+        self.turret_position_points = target_point_space # update current location in space 
+        # self.turret_points = new_theta # update current theta values in space 
+
+        #point = self.turret_points # motor angles
+        #target_point = np.add(point, p_f_inc) #currently moving motors a bit each time: later change to moving pos a bit with ik
+        #theta = target_point #self.solve_turret_ik(target_point) # currently just returns motor angles back to you
+        #theta_names = ["turret_rot", "turret_ext", "turret_tilt"] # add turret_pinch next
+        #self.solve_turret_fk(target_point)
+        #print("commanded angles", theta)
         #for x in range(len(theta_names)):
         #    if not (self.info.joint_lower_limits[self.info_index_map[theta_names[x]]] <= theta[x] <= self.info.joint_upper_limits[self.info_index_map[theta_names[x]]]):
         #        return False
-        command = JointGroupCommand(name="turret_group", cmd=theta)
-        #print(command)
+        command = JointGroupCommand(name="turret_group", cmd=new_theta)
         self.core.pub_group.publish(command)
-        self.turret_points = list(target_point)
+        #self.turret_points = list(target_point)
 
         if blocking:
             rospy.sleep(moving_time)
