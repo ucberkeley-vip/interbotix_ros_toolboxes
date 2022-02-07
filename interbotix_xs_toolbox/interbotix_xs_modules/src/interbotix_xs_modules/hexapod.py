@@ -139,7 +139,8 @@ class InterbotixHexapodXSInterface(object):
 
         bottom_joint = next((joint for joint in robot_description.joints if joint.name == "base_bottom"))
         self.bottom_height = abs(bottom_joint.origin.xyz[2])
-        self.home_height = self.bottom_height + 0.05
+        # self.home_height = self.bottom_height + 0.05
+        self.home_height = .18
 
     ### @brief Intializes the static components of the ROS transforms
     def initialize_transforms(self):
@@ -185,7 +186,7 @@ class InterbotixHexapodXSInterface(object):
         #print(self.hexapod_command)
         #print(self.core.joint_states.position)
         #self.move_in_place(z=.12) #raise starting height
-        self.move_in_world()
+        # self.move_in_world()
 
     ### Performs forward kinematics for turret position
     ### thetas are positions of rotation, extension, tilt motors respectively
@@ -282,18 +283,18 @@ class InterbotixHexapodXSInterface(object):
 
     ### @brief Resets the hexapod to its 'home' or 'sleep' pose
     ### @param pose_type - desired pose
-    def reset_hexapod(self, pose_type="home"):
+    def reset_hexapod(self, pose_type="home", moving_time=.5):
         rospy.loginfo("Going to %s pose..." % pose_type)
         self.T_fb = np.identity(4)
         self.T_fb[2,3] = self.home_height
         self.move_in_place()
         if (self.foot_points != self.home_foot_points):
             self.foot_points = copy.deepcopy(self.home_foot_points)
-            self.move_in_world()
+            self.move_in_world(mp=moving_time)
         if pose_type == "sleep":
             if (self.foot_points != self.sleep_foot_points):
                 self.foot_points = copy.deepcopy(self.sleep_foot_points)
-                self.move_in_world()
+                self.move_in_world(mp=moving_time)
             self.T_fb[2,3] = self.sleep_height
             self.move_in_place()
         self.set_trajectory_time("all", 0.150, 0.075)
@@ -788,3 +789,6 @@ class InterbotixHexapodXSInterface(object):
 
     def set_home_height(self, height):
         self.home_height = height
+
+    def publish(self):
+        self.core.pub_group.publish(self.hexapod_command)
