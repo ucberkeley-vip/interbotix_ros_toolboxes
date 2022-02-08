@@ -63,18 +63,15 @@ class InterbotixHexapodXSInterface(object):
         self.gait_factors = {"tripod" : 2.0, "ripple" : 3.0, "wave" : 6.0}      # Gait factors that modify the first sinusoid function mentioned above based on the selected gait
         self.wave_legs = ["right_front", "left_front", "right_middle", "left_middle", "right_back", "left_back"]                                            # Leg 'Queue' when doing the wave gait; after every period, the first element is taken out and appended to the end of the list
         self.wave_incs = {leg:0 for leg in self.wave_legs}                                                                                                  # Dictionary to keep track of where each leg's foot is during the wave gait
-        self.ripple_legs = {"first" : ["left_middle", "right_front"], "second" : ["left_back", "right_middle"], "third" : ["left_front", "right_back"]}     # Dictionary to keep track of which two legs move together during the ripple gait
+        self.ripple_legs = {"second" : ["left_middle", "right_front"], "third" : ["left_back", "right_middle"], "first" : ["left_front", "right_back"]}     # Dictionary to keep track of which two legs move together during the ripple gait
         self.ripple_leg_pairs = ["first", "second", "third"]                                                                                                # Leg pair 'Queue' when doing the ripple gait; after every period, the first element is taken out and appended to the end of the list
         self.ripple_incs = {pair:0 for pair in self.ripple_leg_pairs}                                                                                       # Dictionary to keep track of where each leg pair's feet are during the ripple gait
         self.leg_list = ["left_back", "left_middle", "left_front", "right_front", "right_middle", "right_back"]                                             # List of all legs in the hexapod
         self.leg_time_map = {leg: {"move" : 0, "accel" : 0} for leg in self.leg_list}                                                                       # Keeps track of the moving & accel times for each joint group
         self.leg_time_map["all"] = {"move" : 0, "accel" : 0}
         self.leg_mode_on = False                                                # Boolean dictating whether or no 'individual leg control' is on or not
-        self.turret_points = {}                                                 # Contains current turret motor positions (rot, ext, tilt)
+        self.turret_points = {}                                                 # Contains current turret motor angle positions (rot, ext, tilt)
         self.turret_pos_points = {}                                             # contains end effector location in space 
-        self.turret_plot_x = []
-        self.turret_plot_y = []
-        self.turret_plot_z = []
         self.pinch_closed = True                                                # True means valve is closed, false means open
         self.foot_points = {}                                                   # Dictionary that contains the current feet positions for each leg
         self.home_foot_points = {}                                              # Dictionary that contains the 'home' feet positions for each leg before starting a gait cycle
@@ -189,8 +186,8 @@ class InterbotixHexapodXSInterface(object):
         #print("turret fk")
         #theta[1] = theta[1] - 1.4 # extension motor offset angle
         #theta[2] = theta[2] + math.pi # tilt motor offset to make starting position zero
-        t1 = theta[0]/3.5 # gear ratio for reducing gear 
-        d2 = theta[1]*.006007 # radians to linear meters
+        t1 = (theta[0]+3.14)/3.5 # gear ratio for reducing gear 
+        d2 = (theta[1]-3.14)*.006007 # radians to linear meters
         t3 = theta[2]
         x = math.cos(t1)*(d2 + .23*math.cos(t3) + .15)
         y = math.sin(t1)*(d2 + .23*math.cos(t3) + .15)
@@ -207,16 +204,17 @@ class InterbotixHexapodXSInterface(object):
         z = point_space[2]
         t3 = np.arcsin((.23-z)/.23)
         t1 = np.arctan(y/x)
-        t1 = t1 * 3.5 # gear ratio for reducing gear 
-        if (t1 != 0): 
+        if (t1 != 0):
             d2 = y/math.sin(t1) -.23*math.cos(t3) -.15
-            d2 = d2/.006007
-            print("turret angles from ik not singular", [t1,d2,t3])
+            print("turret angles from ik not singular")
         else:
             d2 = x -.23*math.cos(t3) - .15
-            d2 = d2/.006007
-            print("turret angles from ik singular", [t1,d2,t3])
-            
+            print("turret angles from ik singular")
+        #d2 = .23*math.sin(t3) - .23
+        t3 = t3 # zero position offset
+        d2 = d2/.006007 + 3.14 # rack and pinion ratio and zero position offset
+        t1 = (t1 * 3.5)-3.14  # gear ratio and zero position offset 
+        print([t1,d2,t3])
         return [t1, d2, t3]
 
     ### @brief Performs forward-kinematics to get the specified leg's foot position relative to the 'base_footprint' frame
@@ -406,7 +404,7 @@ class InterbotixHexapodXSInterface(object):
         #for x in range(len(theta_names)):
         #    if not (self.info.joint_lower_limits[self.info_index_map[theta_names[x]]] <= theta[x] <= self.info.joint_upper_limits[self.info_index_map[theta_names[x]]]):
         #        return False
-        if (new_theta[0] > -math.pi/2 and new_theta[0] < math.pi/2 and new_theta[1] > 0 and new_theta[2] > -1 and new_theta[2] < 1):
+        if (new_theta[0] > -.5 and new_theta[0] < 2*math.pi and new_theta[1] > 1.33 and new_theta[1] < 35 and new_theta[2] > -1 and new_theta[2] < 1):
             command = JointGroupCommand(name="turret_group", cmd=new_theta)
             self.core.pub_group.publish(command)
         #self.turret_points = list(target_point)
@@ -481,8 +479,8 @@ class InterbotixHexapodXSInterface(object):
     ### @param num_cycles - number of gait cycles to complete before exiting
     ### @param cycle_freq - frequency at which the gait cycle should run; defaults to 'num_steps'
     ### @return <bool> - True if function completed successfully; False otherwise
-    ### changed max_foot_height from .04 to .08
-    def move_in_world(self, x_stride=0, y_stride=0, yaw_stride=0, max_foot_height=0.08, num_steps=20.0, gait_type="tripod", mp=0.150, ap=0.075, num_cycles=1, cycle_freq=None):
+    ### changed max_foot_height from .04 to .08, num_steps from 20 to 40
+    def move_in_world(self, x_stride=0, y_stride=0, yaw_stride=0, max_foot_height=0.08, num_steps=40.0, gait_type="tripod", mp=0.150, ap=0.075, num_cycles=1, cycle_freq=None):
         self.set_trajectory_time("all", mp, ap)
         self.num_steps = num_steps
         num_steps_in_cycle = self.num_steps * self.gait_factors[gait_type]/2.0
@@ -537,10 +535,10 @@ class InterbotixHexapodXSInterface(object):
             new_point = []
             T_osc = np.identity(4)
             if (leg == "right_front" or leg == "right_back" or leg == "left_middle"):
-                T_osc[:3,:3] = ang.eulerAnglesToRotationMatrix([0, 0, -yaw_inc])
+                T_osc[:3,:3] = ang.eulerAnglesToRotationMatrix([0, 0, yaw_inc])
                 p_f = [-x_inc, -y_inc, 0 if self.step_cntr < self.num_steps/2.0 else foot_height]
             else:
-                T_osc[:3,:3] = ang.eulerAnglesToRotationMatrix([0, 0, yaw_inc])
+                T_osc[:3,:3] = ang.eulerAnglesToRotationMatrix([0, 0, -yaw_inc])
                 p_f = [x_inc, y_inc, 0 if self.step_cntr > self.num_steps/2.0 else foot_height]
             T_osc[:3,3] = p_f
             new_point = np.dot(T_osc, np.r_[self.foot_points[leg], 1])
