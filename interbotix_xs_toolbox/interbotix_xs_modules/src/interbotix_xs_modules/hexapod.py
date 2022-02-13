@@ -73,6 +73,7 @@ class InterbotixHexapodXSInterface(object):
         self.turret_points = {}                                                 # Contains current turret motor angle positions (rot, ext, tilt)
         self.turret_pos_points = {}                                             # contains end effector location in space 
         self.pinch_closed = True                                                # True means valve is closed, false means open
+        self.pinch_locked = True                                               # Lock position so trigger doesn't do anything
         self.foot_points = {}                                                   # Dictionary that contains the current feet positions for each leg
         self.home_foot_points = {}                                              # Dictionary that contains the 'home' feet positions for each leg before starting a gait cycle
         self.sleep_foot_points = {}                                             # Dictionary that contains the 'sleep' feet positions for each leg
@@ -171,12 +172,9 @@ class InterbotixHexapodXSInterface(object):
         self.hexapod_command.cmd[self.info_index_map["turret_tilt"]] = theta_2
         self.hexapod_command.cmd[self.info_index_map["turret_pinch"]] = theta_3
         self.core.srv_set_reg("group", "all", "Position_P_Gain", self.position_p_gain)
-        #print(self.hexapod_command)
-        #print(self.core.joint_states.position)
         self.reset_hexapod("home")
-        #print(self.hexapod_command)
-        #print(self.core.joint_states.position)
-        #self.move_in_place(z=.12) #raise starting height
+        #self.move_in_place(z=.08) #lower starting height
+        #self.modify_stance(-.04)
         self.move_in_world()
 
     ### Performs forward kinematics for turret position
@@ -186,8 +184,8 @@ class InterbotixHexapodXSInterface(object):
         #print("turret fk")
         #theta[1] = theta[1] - 1.4 # extension motor offset angle
         #theta[2] = theta[2] + math.pi # tilt motor offset to make starting position zero
-        t1 = (theta[0]+3.14)/3.5 # gear ratio for reducing gear 
-        d2 = (theta[1]-3.14)*.006007 # radians to linear meters
+        t1 = (theta[0]+math.pi)/3.5 # gear ratio for reducing gear 
+        d2 = (theta[1]-math.pi)*.006 # radians to linear meters
         t3 = theta[2]
         x = math.cos(t1)*(d2 + .23*math.cos(t3) + .15)
         y = math.sin(t1)*(d2 + .23*math.cos(t3) + .15)
@@ -212,8 +210,8 @@ class InterbotixHexapodXSInterface(object):
             print("turret angles from ik singular")
         #d2 = .23*math.sin(t3) - .23
         t3 = t3 # zero position offset
-        d2 = d2/.006007 + 3.14 # rack and pinion ratio and zero position offset
-        t1 = (t1 * 3.5)-3.14  # gear ratio and zero position offset 
+        d2 = d2/.006 + math.pi # rack and pinion ratio and zero position offset
+        t1 = (t1 * 3.5)- math.pi  # gear ratio and zero position offset 
         print([t1,d2,t3])
         return [t1, d2, t3]
 
@@ -370,17 +368,28 @@ class InterbotixHexapodXSInterface(object):
                 times["accel"] = accel_time
                 self.core.srv_set_reg("group", group, "Profile_Acceleration", int(accel_time * 1000))
 
-    def change_pinch_state(self, moving_time=0.15, accel_time=.075, blocking=True):
-        print("pinch motor actuate")
-        if (self.pinch_closed == True): # if pinch is closed, then open it
-            self.pinch_closed = False
-            command = JointGroupCommand(name="pinch_group", cmd=[-47.1])
-        else: # if pinch is open then close it
-            self.pinch_closed = True
-            command = JointGroupCommand(name="pinch_group", cmd=[5.83])
-        print(command)
-        self.core.pub_group.publish(command)
+    ## L2 trigger locks or unlocks pinch motor, true is locked, false is unlocked
+    def change_pinch_lock(self):
+        self.core.srv_torque('single','turret_pinch',self.pinch_locked) #prev state unlocked, now locked, motor off
+        self.pinch_locked = not(self.pinch_locked)
+        print("pinch motor lock changed to ", self.pinch_locked)
+        #if (self.pinch_locked == True): # if it went from unlocked to locked then stop seeking fully open/closed pos and instead lock at curr position
+            #current_pinch_pos = self.core.srv_get_reg('group','pinch_group','Present_Position',0)  # poll motor position
+            #command = JointGroupCommand(name="pinch_group", cmd=current_pinch_pos)
+            #self.pinch_closed = not(self.pinch_closed) # if it's in the process of opening, want it to keep opening next time so flip it
 
+    ## L1 trigger hold opens or closes pinch motor 
+    def change_pinch_state(self, moving_time=0.15, accel_time=.075, blocking=False):
+        if (self.pinch_locked  == False): # if the motor is not in 'hold pos mode'
+            print("pinch motor actuate")
+            if (self.pinch_closed == True): # if pinch is closed, then open it
+                self.pinch_closed = False
+                command = JointGroupCommand(name="pinch_group", cmd=[-31.4])
+            else: # if pinch is open then close it
+                self.pinch_closed = True
+                command = JointGroupCommand(name="pinch_group", cmd=[0])
+            print(command)
+            self.core.pub_group.publish(command)
         if blocking:
             rospy.sleep(moving_time)
 
@@ -404,7 +413,7 @@ class InterbotixHexapodXSInterface(object):
         #for x in range(len(theta_names)):
         #    if not (self.info.joint_lower_limits[self.info_index_map[theta_names[x]]] <= theta[x] <= self.info.joint_upper_limits[self.info_index_map[theta_names[x]]]):
         #        return False
-        if (new_theta[0] > -.5 and new_theta[0] < 2*math.pi and new_theta[1] > 1.33 and new_theta[1] < 35 and new_theta[2] > -1 and new_theta[2] < 1):
+        if (new_theta[0] > -8 and new_theta[0] < 2.4 and new_theta[1] > 1.33 and new_theta[1] < 35 and new_theta[2] > -1 and new_theta[2] < 1):
             command = JointGroupCommand(name="turret_group", cmd=new_theta)
             self.core.pub_group.publish(command)
         #self.turret_points = list(target_point)
@@ -479,8 +488,8 @@ class InterbotixHexapodXSInterface(object):
     ### @param num_cycles - number of gait cycles to complete before exiting
     ### @param cycle_freq - frequency at which the gait cycle should run; defaults to 'num_steps'
     ### @return <bool> - True if function completed successfully; False otherwise
-    ### changed max_foot_height from .04 to .08, num_steps from 20 to 40
-    def move_in_world(self, x_stride=0, y_stride=0, yaw_stride=0, max_foot_height=0.08, num_steps=40.0, gait_type="tripod", mp=0.150, ap=0.075, num_cycles=1, cycle_freq=None):
+    ### changed max_foot_height from .04 to .06
+    def move_in_world(self, x_stride=0, y_stride=0, yaw_stride=0, max_foot_height=0.06, num_steps=20.0, gait_type="tripod", mp=0.150, ap=0.075, num_cycles=1, cycle_freq=None):
         self.set_trajectory_time("all", mp, ap)
         self.num_steps = num_steps
         num_steps_in_cycle = self.num_steps * self.gait_factors[gait_type]/2.0
