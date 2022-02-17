@@ -384,7 +384,7 @@ class InterbotixHexapodXSInterface(object):
             print("pinch motor actuate")
             if (self.pinch_closed == True): # if pinch is closed, then open it
                 self.pinch_closed = False
-                command = JointGroupCommand(name="pinch_group", cmd=[-31.4])
+                command = JointGroupCommand(name="pinch_group", cmd=[-35.4])
             else: # if pinch is open then close it
                 self.pinch_closed = True
                 command = JointGroupCommand(name="pinch_group", cmd=[0])
