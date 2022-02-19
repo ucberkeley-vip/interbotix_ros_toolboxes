@@ -181,7 +181,7 @@ class InterbotixHexapodXSInterface(object):
     ### thetas are positions of rotation, extension, tilt motors respectively
     ### Next add ik+pinch_flag to put it into world space
     def solve_turret_fk(self, theta):
-        t1 = (theta[0]+math.pi)/3.5 # offset and gear ratio for turret_rot 
+        t1 = (theta[0])/3.5 # offset and gear ratio for turret_rot 
         d2 = (theta[1]-math.pi)*.006 # turret_ext offset(option) and radians to linear meters
         t3 = theta[2] # turret_tilt offset(option)
         x = math.cos(t1)*(d2 + .23*math.cos(t3) + .15)
@@ -208,7 +208,7 @@ class InterbotixHexapodXSInterface(object):
         #d2 = .23*math.sin(t3) - .23
         t3 = t3 # zero position offset for turret_tilt
         d2 = d2/.006 + math.pi  # rack and pinion ratio and zero position offset for turret_ext
-        t1 = (t1 * 3.5)- math.pi  # gear ratio and zero position offset for turret_rot 
+        t1 = (t1 * 3.5)  # gear ratio and zero position offset for turret_rot 
         print([t1,d2,t3])
         return [t1, d2, t3]
 
@@ -381,7 +381,7 @@ class InterbotixHexapodXSInterface(object):
             print("pinch motor actuate")
             if (self.pinch_closed == True): # if pinch is closed, then open it
                 self.pinch_closed = False
-                command = JointGroupCommand(name="pinch_group", cmd=[-35.4])
+                command = JointGroupCommand(name="pinch_group", cmd=[-37])
             else: # if pinch is open then close it
                 self.pinch_closed = True
                 command = JointGroupCommand(name="pinch_group", cmd=[0])
@@ -410,7 +410,7 @@ class InterbotixHexapodXSInterface(object):
         #for x in range(len(theta_names)):
         #    if not (self.info.joint_lower_limits[self.info_index_map[theta_names[x]]] <= theta[x] <= self.info.joint_upper_limits[self.info_index_map[theta_names[x]]]):
         #        return False
-        if (new_theta[0] > -8 and new_theta[0] < 2.4 and new_theta[1] > -3.14 and new_theta[1] < 25 and new_theta[2] > -1 and new_theta[2] < 1):
+        if (new_theta[0] > -5.5 and new_theta[0] < 5.5 and new_theta[1] > -3.14 and new_theta[1] < 27.5 and new_theta[2] > -1.5 and new_theta[2] < 1):
             command = JointGroupCommand(name="turret_group", cmd=new_theta)
             self.core.pub_group.publish(command)
         #self.turret_points = list(target_point)
