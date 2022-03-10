@@ -1,5 +1,6 @@
 import copy
 import math
+from enum import Enum
 import rospy
 import tf2_ros
 import numpy as np
@@ -14,6 +15,9 @@ from interbotix_xs_modules.core import InterbotixRobotXSCore
 from interbotix_common_modules import angle_manipulation as ang
 from interbotix_rpi_modules.neopixels import InterbotixRpiPixelInterface
 
+class LegState(Enum):
+    GROUNDED = 0
+    ELEVATED = 1
 
 ### Notes
 
@@ -71,7 +75,7 @@ class InterbotixHexapodXSInterface(object):
         self.leg_time_map["all"] = {"move" : 0, "accel" : 0}
         self.leg_mode_on = False                                                # Boolean dictating whether or no 'individual leg control' is on or not
         self.turret_points = {}                                                 # Contains current turret motor angle positions (rot, ext, tilt)
-        self.turret_pos_points = {}                                             # contains end effector location in space 
+        self.turret_pos_points = {}                                             # contains end effector location in space
         self.pinch_closed = True                                                # True means valve is closed, false means open
         self.pinch_locked = True                                               # Lock position so trigger doesn't do anything
         self.foot_points = {}                                                   # Dictionary that contains the current feet positions for each leg
@@ -100,6 +104,7 @@ class InterbotixHexapodXSInterface(object):
         self.initialize_start_pose()
         self.pub_pose = rospy.Publisher("/" + self.core.robot_name + "/pose", PoseStamped, queue_size=1)    # ROS Publisher to publish self.T_sf as a PoseStamped message
         tmr_transforms = rospy.Timer(rospy.Duration(0.04), self.publish_states)                             # ROS Timer to publish transforms to the /tf and /odom topics at a fixed rate
+        self.leg_states = {leg: LegState.GROUNDED for leg in self.leg_list}
         print("Initialized InterbotixHexapodXSInterface!\n")
 
     ### @brief Parses the URDF and populates the appropiate variables with link information
@@ -132,7 +137,8 @@ class InterbotixHexapodXSInterface(object):
 
         bottom_joint = next((joint for joint in robot_description.joints if joint.name == "base_bottom"))
         self.bottom_height = abs(bottom_joint.origin.xyz[2])
-        self.home_height = self.bottom_height + 0.05
+        # self.home_height = self.bottom_height + 0.05
+        self.home_height = .18
 
     ### @brief Intializes the static components of the ROS transforms
     def initialize_transforms(self):
@@ -172,6 +178,8 @@ class InterbotixHexapodXSInterface(object):
         self.hexapod_command.cmd[self.info_index_map["turret_tilt"]] = theta_2
         self.hexapod_command.cmd[self.info_index_map["turret_pinch"]] = theta_3
         self.core.srv_set_reg("group", "all", "Position_P_Gain", self.position_p_gain)
+        #print(self.hexapod_command)
+        #print(self.core.joint_states.position)
         self.reset_hexapod("home")
         #self.move_in_place(z=.08) #lower starting height
         #self.modify_stance(-.04)
@@ -181,7 +189,7 @@ class InterbotixHexapodXSInterface(object):
     ### thetas are positions of rotation, extension, tilt motors respectively
     ### Next add ik+pinch_flag to put it into world space
     def solve_turret_fk(self, theta):
-        t1 = (theta[0])/3.5 # offset and gear ratio for turret_rot 
+        t1 = (theta[0])/3.5 # offset and gear ratio for turret_rot
         d2 = (theta[1]-1.57)*.006 # turret_ext offset(option) and radians to linear meters
         t3 = theta[2] # turret_tilt offset(option)
         x = math.cos(t1)*(d2 + .23*math.cos(t3) + .15)
@@ -208,7 +216,7 @@ class InterbotixHexapodXSInterface(object):
         #d2 = .23*math.sin(t3) - .23
         t3 = t3 # zero position offset for turret_tilt
         d2 = d2/.006 + 1.57  # rack and pinion ratio and zero position offset for turret_ext
-        t1 = (t1 * 3.5)  # gear ratio and zero position offset for turret_rot 
+        t1 = (t1 * 3.5)  # gear ratio and zero position offset for turret_rot
         print([t1,d2,t3])
         return [t1, d2, t3]
 
@@ -256,6 +264,7 @@ class InterbotixHexapodXSInterface(object):
 
     ### @brief Adjusts the hexapod's stance to be wider or narrower
     ### @param mod_value - relative distance value by which to tighten or widen the hexapod stance [m]
+    ### @return <bool> - True if function completed successfully; False otherwise
     def modify_stance(self, mod_value):
         new_foot_points = {}
         for leg, point in self.foot_points.items():
@@ -265,23 +274,23 @@ class InterbotixHexapodXSInterface(object):
             else:
                 return False
         self.foot_points = new_foot_points
-        self.move_in_world()
-        return True
+        success = self.move_in_world()
+        return success
 
     ### @brief Resets the hexapod to its 'home' or 'sleep' pose
     ### @param pose_type - desired pose
-    def reset_hexapod(self, pose_type="home"):
+    def reset_hexapod(self, pose_type="home", moving_time=.5):
         rospy.loginfo("Going to %s pose..." % pose_type)
         self.T_fb = np.identity(4)
         self.T_fb[2,3] = self.home_height
         self.move_in_place()
         if (self.foot_points != self.home_foot_points):
             self.foot_points = copy.deepcopy(self.home_foot_points)
-            self.move_in_world()
+            self.move_in_world(mp=moving_time)
         if pose_type == "sleep":
             if (self.foot_points != self.sleep_foot_points):
                 self.foot_points = copy.deepcopy(self.sleep_foot_points)
-                self.move_in_world()
+                self.move_in_world(mp=moving_time)
             self.T_fb[2,3] = self.sleep_height
             self.move_in_place()
         self.set_trajectory_time("all", 0.150, 0.075)
@@ -375,7 +384,7 @@ class InterbotixHexapodXSInterface(object):
             #command = JointGroupCommand(name="pinch_group", cmd=current_pinch_pos)
             #self.pinch_closed = not(self.pinch_closed) # if it's in the process of opening, want it to keep opening next time so flip it
 
-    ## L1 trigger hold opens or closes pinch motor 
+    ## L1 trigger hold opens or closes pinch motor
     def change_pinch_state(self, moving_time=0.15, accel_time=.075, blocking=False):
         if (self.pinch_locked  == False): # if the motor is not in 'hold pos mode'
             print("pinch motor actuate")
@@ -397,9 +406,9 @@ class InterbotixHexapodXSInterface(object):
         target_point_space = np.add(point_space, p_f_inc)
         new_theta = self.solve_turret_ik(target_point_space) # returns angles
         self.turret_points = self.solve_turret_fk(new_theta)
-        
-        self.turret_position_points = target_point_space # update current location in space 
-        # self.turret_points = new_theta # update current theta values in space 
+
+        self.turret_position_points = target_point_space # update current location in space
+        # self.turret_points = new_theta # update current theta values in space
 
         #point = self.turret_points # motor angles
         #target_point = np.add(point, p_f_inc) #currently moving motors a bit each time: later change to moving pos a bit with ik
@@ -424,10 +433,11 @@ class InterbotixHexapodXSInterface(object):
     ### @param moving_time - time [sec] that each joint should spend moving
     ### @param accel_time - time [sec] that each joint should spend accelerating
     ### @param blocking - True if the function should wait 'moving_time' seconds before returning
-    def move_leg(self, leg, p_f_inc=[0, 0, 0], moving_time=0.15, accel_time=0.075, blocking=True):
+    ### @return <bool> - True if function completed successfully; False otherwise
+    def move_leg(self, leg, p_f_inc=[0, 0, 0], relative_to_home=False, moving_time=0.15, accel_time=0.075, blocking=True):
         self.leg_mode_on = True
         self.set_trajectory_time(leg, moving_time, accel_time)
-        point = list(self.foot_points[leg])
+        point = list(self.home_foot_points[leg] if relative_to_home else self.foot_points[leg])
         target_point = np.add(point, p_f_inc)
         theta, success = self.solve_ik(target_point, leg)
         if not success: return False
@@ -440,6 +450,23 @@ class InterbotixHexapodXSInterface(object):
         self.foot_points[leg] = list(target_point)
         if blocking:
             rospy.sleep(moving_time)
+        return True
+
+    def elevate_legs(self, legs_to_elevate):
+        for leg in self.leg_list:
+            # Check for legs that need to be elevated but are currently on ground
+            if leg in legs_to_elevate and self.leg_states[leg] == LegState.GROUNDED:
+                success = self.move_leg(leg, [0, 0, 0.05])
+                if not success:
+                    return False
+                self.leg_states[leg] = LegState.ELEVATED
+            # Check for legs that need to be grounded but are currently elevated
+            elif leg not in legs_to_elevate and self.leg_states[leg] == LegState.ELEVATED:
+                success = self.move_leg(leg, [0, 0, -0.05])
+                if not success:
+                    return False
+                self.leg_states[leg] = LegState.GROUNDED
+        return True
 
     ### @brief Move the hexapod 'base_link' frame in place
     ### @param x - desired 'x' component of self.T_fb
@@ -770,3 +797,6 @@ class InterbotixHexapodXSInterface(object):
 
     def set_home_height(self, height):
         self.home_height = height
+
+    def publish(self):
+        self.core.pub_group.publish(self.hexapod_command)
