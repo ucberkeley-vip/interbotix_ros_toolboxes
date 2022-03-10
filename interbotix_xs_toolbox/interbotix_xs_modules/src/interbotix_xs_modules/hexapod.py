@@ -71,7 +71,7 @@ class InterbotixHexapodXSInterface(object):
         self.leg_time_map["all"] = {"move" : 0, "accel" : 0}
         self.leg_mode_on = False                                                # Boolean dictating whether or no 'individual leg control' is on or not
         self.turret_points = {}                                                 # Contains current turret motor angle positions (rot, ext, tilt)
-        self.turret_pos_points = {}                                             # contains end effector location in space 
+        self.turret_pos_points = {}                                             # contains end effector location in space
         self.pinch_closed = True                                                # True means valve is closed, false means open
         self.pinch_locked = True                                               # Lock position so trigger doesn't do anything
         self.foot_points = {}                                                   # Dictionary that contains the current feet positions for each leg
@@ -83,17 +83,17 @@ class InterbotixHexapodXSInterface(object):
         self.T_sf = np.identity(4)                                              # Odometry transform specifying the 'base_footprint' frame relative to the 'odom' frame
         self.T_fb = np.identity(4)                                              # Body transform specifying the 'base_link' frame relative to the 'base_footprint' frame
         self.T_bc = {}                                                          # Dictionary containing the static transforms of all six 'coxa_link' frames relative to the 'base_link' frame
-        self.coxa_length = None                                                 # Length [meters] of the coxa_link
-        self.femur_length = None                                                # Length [meters] of the femur_link
-        self.tibia_length = None                                                # Length [meters] of the tibia_link
-        self.femur_offset_angle = None                                          # Offset angle [rad] that makes the tibia_link frame coincident with a line shooting out of the coxa_link frame that's parallel to the ground
-        self.tibia_offset_angle = None                                          # Offset angle [rad] that makes the foot_link frame coincident with a line shooting out of the coxa_link frame that's parallel to the ground
-        self.get_urdf_info()
-        self.pose = PoseStamped()                                               # ROS PoseStamped message to publish self.T_sf to its own topic
-        self.t_sf = TransformStamped()                                          # ROS Transform that holds self.T_sf and is published to the /tf topic
-        self.t_fb = TransformStamped()                                          # ROS Transform that holds self.T_fb and is published to the /tf topic
-        self.br = tf2_ros.TransformBroadcaster()
-        self.initialize_transforms()
+        #self.coxa_length = None                                                 # Length [meters] of the coxa_link
+        #self.femur_length = None                                                # Length [meters] of the femur_link
+        #self.tibia_length = None                                                # Length [meters] of the tibia_link
+        #self.femur_offset_angle = None                                          # Offset angle [rad] that makes the tibia_link frame coincident with a line shooting out of the coxa_link frame that's parallel to the ground
+        #self.tibia_offset_angle = None                                          # Offset angle [rad] that makes the foot_link frame coincident with a line shooting out of the coxa_link frame that's parallel to the ground
+        #self.get_urdf_info()
+        #self.pose = PoseStamped()                                               # ROS PoseStamped message to publish self.T_sf to its own topic
+        #self.t_sf = TransformStamped()                                          # ROS Transform that holds self.T_sf and is published to the /tf topic
+        #self.t_fb = TransformStamped()                                          # ROS Transform that holds self.T_fb and is published to the /tf topic
+        #self.br = tf2_ros.TransformBroadcaster()
+        #self.initialize_transforms()
         self.info = self.core.srv_get_info("group", "all")
         self.info_index_map = dict(zip(self.info.joint_names, range(len(self.info.joint_names))))           # Map joint names to their positions in the upper/lower and sleep position arrays
         self.hexapod_command = JointGroupCommand(name="all", cmd=[0] * self.info.num_joints)                # ROS Message to command all 18 joints in the hexapod simultaneously
@@ -147,16 +147,6 @@ class InterbotixHexapodXSInterface(object):
 
     ### @brief Uses forward-kinematics to find the initial foot position for each leg relative to the 'base_footprint' frame
     def initialize_start_pose(self):
-        self.T_fb[2,3] = self.bottom_height
-        for leg in self.leg_list:
-            theta_1 = self.info.joint_sleep_positions[self.info_index_map[leg + "_coxa"]]
-            theta_2 = self.info.joint_sleep_positions[self.info_index_map[leg + "_femur"]]
-            theta_3 = self.info.joint_sleep_positions[self.info_index_map[leg + "_tibia"]]
-            self.sleep_foot_points[leg] = self.solve_fk([theta_1, theta_2, theta_3], leg)
-            self.sleep_height = self.bottom_height - self.sleep_foot_points[leg][2]
-            self.sleep_foot_points[leg][2] = 0
-        self.home_foot_points = copy.deepcopy(self.sleep_foot_points)
-        self.foot_points = copy.deepcopy(self.home_foot_points)
         # initialize turret position var to current position (in theta space, next add ik+pinch_flag to put it into world space)
         theta_0 = self.info.joint_sleep_positions[self.info_index_map["turret_rot"]]
         theta_1 = self.info.joint_sleep_positions[self.info_index_map["turret_ext"]]
@@ -172,16 +162,16 @@ class InterbotixHexapodXSInterface(object):
         self.hexapod_command.cmd[self.info_index_map["turret_tilt"]] = theta_2
         self.hexapod_command.cmd[self.info_index_map["turret_pinch"]] = theta_3
         self.core.srv_set_reg("group", "all", "Position_P_Gain", self.position_p_gain)
-        self.reset_hexapod("home")
+        #self.reset_hexapod("home")
         #self.move_in_place(z=.08) #lower starting height
         #self.modify_stance(-.04)
-        self.move_in_world()
+        #self.move_in_world()
 
     ### Performs forward kinematics for turret position
     ### thetas are positions of rotation, extension, tilt motors respectively
     ### Next add ik+pinch_flag to put it into world space
     def solve_turret_fk(self, theta):
-        t1 = (theta[0])/3.5 # offset and gear ratio for turret_rot 
+        t1 = (theta[0])/3.5 # offset and gear ratio for turret_rot
         d2 = (theta[1]-1.57)*.006 # turret_ext offset(option) and radians to linear meters
         t3 = theta[2] # turret_tilt offset(option)
         x = math.cos(t1)*(d2 + .23*math.cos(t3) + .15)
@@ -208,7 +198,7 @@ class InterbotixHexapodXSInterface(object):
         #d2 = .23*math.sin(t3) - .23
         t3 = t3 # zero position offset for turret_tilt
         d2 = d2/.006 + 1.57  # rack and pinion ratio and zero position offset for turret_ext
-        t1 = (t1 * 3.5)  # gear ratio and zero position offset for turret_rot 
+        t1 = (t1 * 3.5)  # gear ratio and zero position offset for turret_rot
         print([t1,d2,t3])
         return [t1, d2, t3]
 
@@ -375,7 +365,7 @@ class InterbotixHexapodXSInterface(object):
             #command = JointGroupCommand(name="pinch_group", cmd=current_pinch_pos)
             #self.pinch_closed = not(self.pinch_closed) # if it's in the process of opening, want it to keep opening next time so flip it
 
-    ## L1 trigger hold opens or closes pinch motor 
+    ## L1 trigger hold opens or closes pinch motor
     def change_pinch_state(self, moving_time=0.15, accel_time=.075, blocking=False):
         if (self.pinch_locked  == False): # if the motor is not in 'hold pos mode'
             print("pinch motor actuate")
@@ -397,9 +387,9 @@ class InterbotixHexapodXSInterface(object):
         target_point_space = np.add(point_space, p_f_inc)
         new_theta = self.solve_turret_ik(target_point_space) # returns angles
         self.turret_points = self.solve_turret_fk(new_theta)
-        
-        self.turret_position_points = target_point_space # update current location in space 
-        # self.turret_points = new_theta # update current theta values in space 
+
+        self.turret_position_points = target_point_space # update current location in space
+        # self.turret_points = new_theta # update current theta values in space
 
         #point = self.turret_points # motor angles
         #target_point = np.add(point, p_f_inc) #currently moving motors a bit each time: later change to moving pos a bit with ik
