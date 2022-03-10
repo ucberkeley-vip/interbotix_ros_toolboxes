@@ -182,7 +182,7 @@ class InterbotixHexapodXSInterface(object):
     ### Next add ik+pinch_flag to put it into world space
     def solve_turret_fk(self, theta):
         t1 = (theta[0])/3.5 # offset and gear ratio for turret_rot 
-        d2 = (theta[1]-math.pi)*.006 # turret_ext offset(option) and radians to linear meters
+        d2 = (theta[1]-1.57)*.006 # turret_ext offset(option) and radians to linear meters
         t3 = theta[2] # turret_tilt offset(option)
         x = math.cos(t1)*(d2 + .23*math.cos(t3) + .15)
         y = math.sin(t1)*(d2 + .23*math.cos(t3) + .15)
@@ -207,7 +207,7 @@ class InterbotixHexapodXSInterface(object):
             print("turret angles from ik singular")
         #d2 = .23*math.sin(t3) - .23
         t3 = t3 # zero position offset for turret_tilt
-        d2 = d2/.006 + math.pi  # rack and pinion ratio and zero position offset for turret_ext
+        d2 = d2/.006 + 1.57  # rack and pinion ratio and zero position offset for turret_ext
         t1 = (t1 * 3.5)  # gear ratio and zero position offset for turret_rot 
         print([t1,d2,t3])
         return [t1, d2, t3]
