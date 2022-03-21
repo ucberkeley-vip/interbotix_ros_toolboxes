@@ -178,6 +178,8 @@ class InterbotixHexapodXSInterface(object):
         self.hexapod_command.cmd[self.info_index_map["turret_tilt"]] = theta_2
         self.hexapod_command.cmd[self.info_index_map["turret_pinch"]] = theta_3
         self.core.srv_set_reg("group", "all", "Position_P_Gain", self.position_p_gain)
+        self.core.srv_set_reg("single", "turret_pinch", "Profile_Acceleration", int(1000)) # slow down accel of pinch
+        self.core.srv_set_reg("single", "turet_pinch", "Profile_Velocity", int(5000)) # slow down vel of pinch
         #print(self.hexapod_command)
         #print(self.core.joint_states.position)
         self.reset_hexapod("home")
@@ -189,7 +191,7 @@ class InterbotixHexapodXSInterface(object):
     ### thetas are positions of rotation, extension, tilt motors respectively
     ### Next add ik+pinch_flag to put it into world space
     def solve_turret_fk(self, theta):
-        t1 = (theta[0])/3.5 # offset and gear ratio for turret_rot
+        t1 = (theta[0] + 3.14)/3.5 # offset and gear ratio for turret_rot
         d2 = (theta[1]-1.57)*.006 # turret_ext offset(option) and radians to linear meters
         t3 = theta[2] # turret_tilt offset(option)
         x = math.cos(t1)*(d2 + .23*math.cos(t3) + .15)
@@ -216,7 +218,7 @@ class InterbotixHexapodXSInterface(object):
         #d2 = .23*math.sin(t3) - .23
         t3 = t3 # zero position offset for turret_tilt
         d2 = d2/.006 + 1.57  # rack and pinion ratio and zero position offset for turret_ext
-        t1 = (t1 * 3.5)  # gear ratio and zero position offset for turret_rot
+        t1 = (t1 * 3.5) - 3.14  # gear ratio and zero position offset for turret_rot
         print([t1,d2,t3])
         return [t1, d2, t3]
 
@@ -390,7 +392,7 @@ class InterbotixHexapodXSInterface(object):
             print("pinch motor actuate")
             if (self.pinch_closed == True): # if pinch is closed, then open it
                 self.pinch_closed = False
-                command = JointGroupCommand(name="pinch_group", cmd=[-37])
+                command = JointGroupCommand(name="pinch_group", cmd=[-37.5])
             else: # if pinch is open then close it
                 self.pinch_closed = True
                 command = JointGroupCommand(name="pinch_group", cmd=[0])
