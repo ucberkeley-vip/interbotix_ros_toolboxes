@@ -409,7 +409,7 @@ class InterbotixHexapodXSInterface(object):
         #self.turret_pos_world = self.solve_turret_fk(new_theta) # returns points in space
         
         # check motor limits, then move motors 
-        if (new_theta[0] > 0 and new_theta[0] < 6 and new_theta[1] > -3.14 and new_theta[1] < 29 and new_theta[2] > -1.55 and new_theta[2] < 1.55):
+        if (new_theta[0] > -6.5 and new_theta[0] < 6.5 and new_theta[1] > -3.14 and new_theta[1] < 29 and new_theta[2] > -1.55 and new_theta[2] < 1.55):
             command = JointGroupCommand(name="turret_group", cmd=new_theta)
             self.core.pub_group.publish(command)
 
