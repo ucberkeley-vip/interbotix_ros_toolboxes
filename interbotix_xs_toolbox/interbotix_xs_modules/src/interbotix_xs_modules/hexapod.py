@@ -178,8 +178,10 @@ class InterbotixHexapodXSInterface(object):
         self.hexapod_command.cmd[self.info_index_map["turret_tilt"]] = theta_2
         self.hexapod_command.cmd[self.info_index_map["turret_pinch"]] = theta_3
         self.core.srv_set_reg("group", "all", "Position_P_Gain", self.position_p_gain)
-        self.core.srv_set_reg("single", "turret_pinch", "Profile_Acceleration", int(1000)) # slow down accel of pinch
-        self.core.srv_set_reg("single", "turet_pinch", "Profile_Velocity", int(5000)) # slow down vel of pinch
+        self.core.srv_set_reg("group", "turet_group", "Profile_Velocity", int(75)) # speed up turret movement 
+        self.core.srv_set_reg("group", "turret_group", "Profile_Acceleration", int(35)) # speed up turret movement 
+        self.core.srv_set_reg("single", "turret_pinch", "Profile_Acceleration", int(300)) # slow down accel of pinch
+        self.core.srv_set_reg("single", "turet_pinch", "Profile_Velocity", int(150)) # slow down vel of pinch
         #print(self.hexapod_command)
         #print(self.core.joint_states.position)
         self.reset_hexapod("home")
@@ -326,8 +328,8 @@ class InterbotixHexapodXSInterface(object):
     ### @param accel_time - time in seconds that each motor should accelerate
     def set_trajectory_time(self, group, moving_time=1.0, accel_time=0.3):
         if (group == "all" and self.leg_mode_on):
-            self.core.srv_set_reg("group", "all", "Profile_Velocity", int(moving_time * 1000))
-            self.core.srv_set_reg("group", "all", "Profile_Acceleration", int(accel_time * 1000))
+            self.core.srv_set_reg("group", "legs", "Profile_Velocity", int(moving_time * 1000))
+            self.core.srv_set_reg("group", "legs", "Profile_Acceleration", int(accel_time * 1000))
             for leg in self.leg_list:
                 self.leg_time_map[leg] = {"move" : moving_time, "accel" : accel_time}
             self.leg_time_map["all"] = {"move" : moving_time, "accel" : accel_time}
@@ -357,10 +359,10 @@ class InterbotixHexapodXSInterface(object):
             print("pinch motor actuate")
             if (self.pinch_closed == True): # if pinch is closed, then open it
                 self.pinch_closed = False
-                command = JointGroupCommand(name="pinch_group", cmd=[-37.5])
+                command = JointGroupCommand(name="pinch_group", cmd=[(-1.687)]) # -37
             else: # if pinch is open then close it
                 self.pinch_closed = True
-                command = JointGroupCommand(name="pinch_group", cmd=[0])
+                command = JointGroupCommand(name="pinch_group", cmd=[2.687]) # 0
             print(command)
             self.core.pub_group.publish(command)
         if blocking:
