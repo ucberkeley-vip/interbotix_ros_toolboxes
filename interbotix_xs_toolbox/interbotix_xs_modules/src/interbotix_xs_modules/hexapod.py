@@ -357,12 +357,13 @@ class InterbotixHexapodXSInterface(object):
     def change_pinch_state(self, moving_time=0.15, accel_time=.075, blocking=False):
         if (self.pinch_locked  == False): # if the motor is not in 'hold pos mode'
             print("pinch motor actuate")
+            theta = self.info.joint_sleep_positions[self.info_index_map["turret_pinch"]] # sleep position (fully closed)
             if (self.pinch_closed == True): # if pinch is closed, then open it
                 self.pinch_closed = False
-                command = JointGroupCommand(name="pinch_group", cmd=[(-1.687)]) # -37
+                command = JointGroupCommand(name="pinch_group", cmd=[(theta-3.14)]) # open a half turn (may need to modify based on foam conditions)
             else: # if pinch is open then close it
                 self.pinch_closed = True
-                command = JointGroupCommand(name="pinch_group", cmd=[2.687]) # 0
+                command = JointGroupCommand(name="pinch_group", cmd=[theta]) # 0
             print(command)
             self.core.pub_group.publish(command)
         if blocking:
