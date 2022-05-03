@@ -340,15 +340,15 @@ class InterbotixHexapodXSInterface(object):
         target_point = np.add(point, p_f_inc)
         theta, success = self.solve_ik(target_point, leg)
         if not success: 
-            rospy.loginfo("ik not success")
+            # rospy.loginfo("ik not success")
             return False
         theta_names = [leg + "_coxa", leg + "_femur", leg + "_tibia"]
         for x in range(len(theta_names)):
             if not (self.info.joint_lower_limits[self.info_index_map[theta_names[x]]]*1.1 <= theta[x] <= self.info.joint_upper_limits[self.info_index_map[theta_names[x]]]*1.1):
-                rospy.loginfo("joint limit exceeded")
-                rospy.loginfo("lower limit: %f", self.info.joint_lower_limits[self.info_index_map[theta_names[x]]])
-                rospy.loginfo("upper limit: %f", self.info.joint_upper_limits[self.info_index_map[theta_names[x]]])
-                rospy.loginfo("actual joint: %s", theta[x])
+                # rospy.loginfo("joint limit exceeded")
+                # rospy.loginfo("lower limit: %f", self.info.joint_lower_limits[self.info_index_map[theta_names[x]]])
+                # rospy.loginfo("upper limit: %f", self.info.joint_upper_limits[self.info_index_map[theta_names[x]]])
+                # rospy.loginfo("actual joint: %s", theta[x])
                 return False
         command = JointGroupCommand(name=leg, cmd=theta)
         self.core.pub_group.publish(command)
