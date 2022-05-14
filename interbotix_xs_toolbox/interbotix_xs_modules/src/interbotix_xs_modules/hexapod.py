@@ -218,7 +218,6 @@ class InterbotixHexapodXSInterface(object):
         rospy.loginfo("Going to %s pose..." % pose_type)
         self.T_fb = np.identity(4)
         self.T_fb[2,3] = self.home_height
-        self.move_in_place()
         if (self.foot_points != self.home_foot_points):
             self.foot_points = copy.deepcopy(self.home_foot_points)
             self.move_in_world()
